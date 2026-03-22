@@ -4,6 +4,18 @@
 
 ---
 
+## [0.1.1] - 2026-03-22
+
+### Added
+- CLI input validation: file existence, PDF extension check, magic bytes verification
+- Output path auto-derivation (input_dir/input_stem.pptx)
+- DPI validation (72-1200 range, default 300)
+- Output parent directory auto-creation
+- InputError and OutputError custom exception classes
+- 26 new unit tests for CLI (47 total, 94% coverage)
+
+---
+
 ## [0.1.0] - 2026-03-22
 
 ### Added
@@ -35,4 +47,4 @@
 
 ---
 
-<!-- last-sync: b84b0bd -->
+<!-- last-sync: 3254f9d -->
