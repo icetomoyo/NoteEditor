@@ -6,7 +6,7 @@
 
 | ID | Title | Category | Priority | Status | Version |
 |----|-------|----------|----------|--------|---------|
-| 001 | 项目结构与依赖管理 | Internal | Critical | Planned | v0.1.0 |
+| 001 | 项目结构与依赖管理 | Internal | Critical | InProgress | v0.1.0 |
 | 002 | CLI 入口与参数解析 | New | Critical | Planned | v0.1.0 |
 | 003 | PDF 页面渲染（PyMuPDF 集成） | New | Critical | Planned | v0.1.0 |
 | 004 | 宽高比检测与 PPTX 尺寸匹配 | New | High | Planned | v0.1.0 |

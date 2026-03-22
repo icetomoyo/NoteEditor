@@ -1,0 +1,17 @@
+# NotebookLM Font Mapping Table
+# label: font configuration for each semantic label
+
+title:
+  font_name: "Google Sans"
+  font_file: "GoogleSans-Bold.ttf"
+  system_fallback: "Arial"
+
+body_text:
+  font_name: "Google Sans"
+  font_file: "GoogleSans-Regular.ttf"
+  system_fallback: "Arial"
+
+code_block:
+  font_name: "Google Sans Mono"
+  font_file: "GoogleSansMono-Regular.ttf"
+  system_fallback: "Consolas"

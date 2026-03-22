@@ -15,7 +15,7 @@ class PageImage:
     dpi: int                        # 渲染 DPI
     aspect_ratio: float             # 宽高比 (16:9 = 1.778)
     image: np.ndarray               # 页面图像 (H, W, 3) RGB
-    embedded_images: list[EmbeddedResource]  # PDF 中嵌入的原始图片
+    embedded_images: tuple[EmbeddedResource, ...]  # PDF 中嵌入的原始图片（frozen 用 tuple）
 ```
 
 ```python
@@ -28,10 +28,22 @@ class EmbeddedResource:
     height_px: int                  # 原始高度
 ```
 
+```python
+@dataclass(frozen=True)
+class PageMetadata:
+    page_number: int                # 页码（0-based）
+    width_px: int                   # 渲染宽度（像素）
+    height_px: int                  # 渲染高度（像素）
+    aspect_ratio: float             # 宽高比 (16:9 = 1.778)
+    total_pages: int                # PDF 总页数
+```
+
 ### 1.2 LayoutRegion / LayoutResult（models/layout.py）
 
 ```python
-class RegionLabel(str, Enum):
+from enum import StrEnum
+
+class RegionLabel(StrEnum):
     TITLE = "title"
     BODY_TEXT = "body_text"
     IMAGE = "image"
