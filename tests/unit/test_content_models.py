@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult
 from noteeditor.models.layout import RegionLabel

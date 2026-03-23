@@ -17,8 +17,10 @@ class TestInputError:
             raise InputError("bad input")
 
     def test_input_error_can_be_caught_as_exception(self) -> None:
-        with pytest.raises(Exception):
+        try:
             raise InputError("bad input")
+        except Exception:
+            pass  # Expected: InputError is a subclass of Exception
 
 
 class TestOutputError:

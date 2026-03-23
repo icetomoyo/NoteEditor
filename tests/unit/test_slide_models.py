@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from noteeditor.models.content import FontMatch
 from noteeditor.models.layout import RegionLabel
