@@ -4,6 +4,21 @@
 
 ---
 
+## [0.1.2] - 2026-03-23
+
+### Added
+- PDF page rendering with PyMuPDF integration (pixmap_to_numpy, render_page, parse_pdf)
+- RGB/RGBA/grayscale pixmap to (H,W,3) uint8 conversion with memory-safe copy
+- Per-page error isolation: failed pages are skipped with warning, not raised
+- DPI validation at parser entry point (positive integer check)
+- 15 unit tests for parser module (100% line coverage)
+
+### Fixed
+- Pre-existing lint issues: removed unused imports in test_cli, test_content_models, test_slide_models
+- Replaced B017 blind exception assertion in test_errors with try/except pattern
+
+---
+
 ## [0.1.1] - 2026-03-22
 
 ### Added
@@ -47,4 +62,4 @@
 
 ---
 
-<!-- last-sync: 3254f9d -->
+<!-- last-sync: e05e3ef -->
