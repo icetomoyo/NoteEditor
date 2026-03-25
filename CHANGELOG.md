@@ -4,6 +4,26 @@
 
 ---
 
+## [0.1.3] - 2026-03-25
+
+### Added
+- Aspect ratio detection and PPTX slide dimension mapping (16:9 → 13.333in×7.5in, 4:3 → 10in×7.5in)
+- Pipeline orchestrator with serial Parser → Builder dispatch and PipelineResult statistics
+- PPTX builder: screenshot-as-background mode using python-pptx BackgroundFill
+- Configuration management: build_config() factory with CLI > env > defaults priority
+- NOTEEDITOR_DPI environment variable support for DPI configuration
+- --verbose/-v CLI flag for verbose output
+- DPI constants (MIN_DPI=72, MAX_DPI=1200, DEFAULT_DPI=300) centralized in config module
+- Human test guides for features 004-007
+- v0.2.0 design document (features 009-012: layout, OCR, editable text, pipeline)
+
+### Changed
+- Restructured version roadmap: editable mode moved to v0.2.0 (before visual fidelity)
+- Rewritten PRD §5 version planning (6 phases: skeleton → editable → background → font → precision → complete)
+- Updated FEATURE_LIST.md with features 009-022 across v0.2.0-v0.6.0
+
+---
+
 ## [0.1.2] - 2026-03-23
 
 ### Added
@@ -62,4 +82,4 @@
 
 ---
 
-<!-- last-sync: e05e3ef -->
+<!-- last-sync: 066f1f6 -->
