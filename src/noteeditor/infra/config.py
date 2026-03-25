@@ -1,1 +1,77 @@
 """Configuration management - PipelineConfig construction."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from noteeditor.errors import InputError
+
+MIN_DPI: int = 72
+MAX_DPI: int = 1200
+DEFAULT_DPI: int = 300
+
+_ENV_DPI_KEY = "NOTEEDITOR_DPI"
+
+
+def _resolve_dpi(dpi: int | None) -> int:
+    """Resolve DPI from CLI arg, env var, or default.
+
+    Priority: CLI arg > environment variable > default.
+    Raises InputError if env var value is invalid.
+    """
+    if dpi is not None:
+        return dpi
+
+    env_val = os.environ.get(_ENV_DPI_KEY)
+    if env_val is None:
+        return DEFAULT_DPI
+
+    try:
+        parsed = int(env_val)
+    except ValueError as e:
+        raise InputError(
+            f"Environment variable {_ENV_DPI_KEY} has invalid DPI value: {env_val!r}"
+        ) from e
+
+    if parsed < MIN_DPI or parsed > MAX_DPI:
+        raise InputError(
+            f"DPI must be between {MIN_DPI} and {MAX_DPI}, got {parsed} "
+            f"(from {_ENV_DPI_KEY})"
+        )
+
+    return parsed
+
+
+def build_config(
+    input_path: Path,
+    output_path: Path,
+    dpi: int | None = None,
+    verbose: bool = False,
+) -> PipelineConfig:
+    """Build PipelineConfig with CLI > env > defaults priority.
+
+    If dpi is None, falls back to NOTEEDITOR_DPI env var, then default.
+    """
+    resolved_dpi = _resolve_dpi(dpi)
+    return PipelineConfig(
+        input_path=input_path,
+        output_path=output_path,
+        dpi=resolved_dpi,
+        verbose=verbose,
+    )
+
+
+@dataclass(frozen=True)
+class PipelineConfig:
+    """Immutable pipeline configuration.
+
+    For v0.1.0, only essential fields are included.
+    Future versions will add mode, device, retry_pages, etc.
+    """
+
+    input_path: Path
+    output_path: Path
+    dpi: int = 300
+    verbose: bool = False

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -10,6 +11,17 @@ from click.testing import CliRunner
 from noteeditor.cli import main as cli_main
 from noteeditor.cli import resolve_output_path, validate_dpi, validate_pdf
 from noteeditor.errors import InputError
+from noteeditor.pipeline import PipelineResult
+
+
+def _mock_pipeline_result(output_path: str = "output.pptx", total: int = 0) -> PipelineResult:
+    """Create a mock PipelineResult for testing."""
+    return PipelineResult(
+        output_path=Path(output_path),
+        total_pages=total,
+        success_pages=total,
+        failed_pages=0,
+    )
 
 
 class TestValidatePdf:
@@ -104,28 +116,38 @@ class TestCliMain:
         result = runner.invoke(cli_main, [str(fake_pdf)])
         assert result.exit_code == 1
 
-    def test_valid_pdf_runs(self, tmp_path: Path) -> None:
+    def test_valid_pdf_runs_pipeline(self, tmp_path: Path) -> None:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4\n")
         runner = CliRunner()
-        result = runner.invoke(cli_main, [str(pdf_file)])
-        # Should not fail on validation (pipeline not yet implemented)
-        assert result.exit_code == 0 or "not yet implemented" in result.output.lower()
+        mock_result = _mock_pipeline_result(
+            output_path=str(tmp_path / "test.pptx"), total=1
+        )
+        with patch("noteeditor.cli.run_pipeline", return_value=mock_result):
+            result = runner.invoke(cli_main, [str(pdf_file)])
+        assert result.exit_code == 0
+        assert "1/1 pages" in result.output
 
     def test_output_parent_dir_created(self, tmp_path: Path) -> None:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4\n")
         output_path = tmp_path / "nested" / "dir" / "output.pptx"
         runner = CliRunner()
-        result = runner.invoke(cli_main, [str(pdf_file), "-o", str(output_path)])
-        assert result.exit_code == 0 or "not yet implemented" in result.output.lower()
+        mock_result = _mock_pipeline_result(output_path=str(output_path))
+        with patch("noteeditor.cli.run_pipeline", return_value=mock_result):
+            result = runner.invoke(cli_main, [str(pdf_file), "-o", str(output_path)])
+        assert result.exit_code == 0
 
     def test_custom_dpi_accepted(self, tmp_path: Path) -> None:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4\n")
         runner = CliRunner()
-        result = runner.invoke(cli_main, [str(pdf_file), "--dpi", "150"])
-        assert result.exit_code == 0 or "not yet implemented" in result.output.lower()
+        mock_result = _mock_pipeline_result(
+            output_path=str(tmp_path / "test.pptx")
+        )
+        with patch("noteeditor.cli.run_pipeline", return_value=mock_result):
+            result = runner.invoke(cli_main, [str(pdf_file), "--dpi", "150"])
+        assert result.exit_code == 0
 
     def test_invalid_dpi_shows_error(self, tmp_path: Path) -> None:
         pdf_file = tmp_path / "test.pdf"
