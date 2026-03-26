@@ -7,6 +7,12 @@ from enum import StrEnum
 
 from noteeditor.models.page import BoundingBox
 
+__all__ = [
+    "LayoutRegion",
+    "LayoutResult",
+    "RegionLabel",
+]
+
 
 class RegionLabel(StrEnum):
     """Semantic label for a detected layout region."""
