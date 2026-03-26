@@ -4,6 +4,22 @@
 
 ---
 
+## [0.1.4] - 2026-03-26
+
+### Added
+- ModelManager: ONNX model loading with CPU/GPU/auto device resolution and actionable error messages
+- Layout detection stage: PP-DocLayout-V3 preprocessing (800x800 resize, ImageNet normalization), inference, and output parsing
+- PP-DocLayout-V3 label mapping: 26 model categories mapped to 11 RegionLabel types
+- opencv-python-headless dependency for image preprocessing
+- `__all__` exports in `models/layout.py`
+- Unit tests for model_manager (10 tests) and layout detection stage (22 tests)
+- Human test guide for Feature 009 (11 test cases + 4 boundary cases)
+
+### Changed
+- Feature 009 status updated to InProgress
+
+---
+
 ## [0.1.3] - 2026-03-25
 
 ### Added
@@ -82,4 +98,4 @@
 
 ---
 
-<!-- last-sync: 066f1f6 -->
+<!-- last-sync: 7c5a1d3 -->
