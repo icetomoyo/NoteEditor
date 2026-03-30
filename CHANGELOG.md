@@ -4,6 +4,21 @@
 
 ---
 
+## [0.1.5] - 2026-03-28
+
+### Added
+- OCR text extraction stage: GLM-OCR integration with ZhipuAI API for text and formula recognition
+- Region cropping with configurable padding and boundary clamping for OCR input preparation
+- Base64 image encoding for API payload construction
+- API response parsing: text/formula classification, confidence extraction, LaTeX formula detection
+- ModelManager: `get_ocr_model()` method with FileNotFoundError guidance (mirrors layout model pattern)
+- 49 unit tests for OCR stage covering all functions and error paths
+
+### Changed
+- Feature 010 status updated to InProgress
+
+---
+
 ## [0.1.4] - 2026-03-26
 
 ### Added
@@ -98,4 +113,4 @@
 
 ---
 
-<!-- last-sync: 7c5a1d3 -->
+<!-- last-sync: HEAD -->

@@ -14,7 +14,7 @@
 | 006 | 基础 PPTX 输出（纯截图模式） | New | Critical | Completed | v0.1.0 |
 | 007 | 配置管理基础设施 | Internal | Medium | InProgress | v0.1.0 |
 | 009 | 布局检测（PP-DocLayout-V3） | New | Critical | InProgress | v0.2.0 |
-| 010 | OCR 文字提取（GLM-OCR） | New | Critical | Planned | v0.2.0 |
+| 010 | OCR 文字提取（GLM-OCR） | New | Critical | InProgress | v0.2.0 |
 | 011 | 可编辑文本框放置 | New | Critical | Planned | v0.2.0 |
 | 012 | Pipeline 多阶段扩展 | Internal | Critical | Planned | v0.2.0 |
 | 013 | 程序化背景重建 | New | High | Planned | v0.3.0 |

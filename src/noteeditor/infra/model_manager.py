@@ -13,6 +13,12 @@ _LAYOUT_MODEL_URL = (
     "resolve/main/pp_doclayout_v3.onnx"
 )
 
+_OCR_MODEL_FILENAME = "glm_ocr.onnx"
+_OCR_MODEL_URL = (
+    "https://huggingface.co/THUDM/glm-ocr/"
+    "resolve/main/glm_ocr.onnx"
+)
+
 
 @dataclass(frozen=True)
 class ModelManager:
@@ -43,6 +49,29 @@ class ModelManager:
             return ort.InferenceSession(str(model_path), providers=providers)
         except Exception as exc:
             raise RuntimeError(f"Failed to load layout model from {model_path}: {exc}") from exc
+
+    def get_ocr_model(self) -> ort.InferenceSession:
+        """Load the GLM-OCR text recognition model.
+
+        Raises:
+            FileNotFoundError: If the model file does not exist.
+                Message includes download URL and target path.
+            RuntimeError: If the model file exists but fails to load.
+        """
+        model_path = self.models_dir / _OCR_MODEL_FILENAME
+        if not model_path.exists():
+            msg = (
+                f"OCR model not found at {model_path}. "
+                f"Please download it from {_OCR_MODEL_URL} "
+                f"and place it in {self.models_dir}."
+            )
+            raise FileNotFoundError(msg)
+
+        providers = self._resolve_providers()
+        try:
+            return ort.InferenceSession(str(model_path), providers=providers)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load OCR model from {model_path}: {exc}") from exc
 
     def _resolve_providers(self) -> list[str]:
         """Resolve ONNX Runtime execution providers based on device setting.
