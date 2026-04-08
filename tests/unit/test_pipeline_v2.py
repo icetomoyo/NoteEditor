@@ -1,4 +1,4 @@
-"""Tests for pipeline v0.3.0 - 6-stage dispatch (Feature 013)."""
+"""Tests for pipeline v0.3.0 - 7-stage dispatch (Feature 014)."""
 
 from __future__ import annotations
 
@@ -174,10 +174,10 @@ class TestBuildConfigV2:
 
 
 class TestRunPipelineEditable:
-    """Tests for run_pipeline in editable mode (6-stage)."""
+    """Tests for run_pipeline in editable mode (7-stage)."""
 
     def test_editable_single_page(self, tmp_path: Path) -> None:
-        """Editable mode runs 6 stages for a single page."""
+        """Editable mode runs 7 stages for a single page."""
         pdf_path = tmp_path / "test.pdf"
         pdf_path.write_bytes(b"%PDF-1.4 mock")
         output_path = tmp_path / "output.pptx"
@@ -192,6 +192,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background", return_value=bg,
             ) as mock_bg,
@@ -229,6 +230,7 @@ class TestRunPipelineEditable:
                 return_value=layout,
             ) as mock_layout,
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -259,6 +261,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()) as mock_ocr,
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -289,6 +292,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -320,6 +324,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.extract_background", return_value=bg),
             patch(
                 "noteeditor.pipeline.assemble_slide",
@@ -332,11 +337,76 @@ class TestRunPipelineEditable:
         ):
             run_pipeline(config)
 
-        # assemble_slide should receive background_image as 4th arg
+        # assemble_slide should receive background_image and image_results
         call_args = mock_assemble.call_args
         assert call_args[0][0] is page
         assert call_args[0][1] is layout
-        assert call_args[0][3] is bg
+        assert call_args[0][3] is bg  # background_image
+
+    def test_editable_calls_extract_images(self, tmp_path: Path) -> None:
+        """Editable mode calls extract_images for each page."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout),
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()) as mock_img,
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
+            patch("noteeditor.pipeline.assemble_slide"),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            run_pipeline(config)
+
+        mock_img.assert_called_once_with(page, layout)
+
+    def test_editable_passes_image_results_to_assemble(self, tmp_path: Path) -> None:
+        """Image results are passed to assemble_slide."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout),
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
+            patch("noteeditor.pipeline.assemble_slide") as mock_assemble,
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            mock_assemble.return_value = _make_mock_slide(page)
+            run_pipeline(config)
+
+        # image_results is the 5th positional arg (index 4)
+        call_args = mock_assemble.call_args
+        assert call_args[0][4] == ()  # image_results
 
     def test_editable_fallback_on_layout_error(self, tmp_path: Path) -> None:
         """If layout detection fails, page falls back to screenshot mode."""
@@ -355,6 +425,7 @@ class TestRunPipelineEditable:
                 side_effect=RuntimeError("model error"),
             ),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -393,6 +464,7 @@ class TestRunPipelineEditable:
                 "noteeditor.pipeline.extract_text",
                 side_effect=RuntimeError("ocr error"),
             ),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -425,6 +497,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 side_effect=RuntimeError("bg error"),
@@ -467,6 +540,7 @@ class TestRunPipelineEditable:
                 side_effect=_detect_layout_side_effect,
             ),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -570,6 +644,24 @@ class TestRunPipelineVisual:
 
         mock_bg.assert_not_called()
 
+    def test_visual_does_not_call_extract_images(self, tmp_path: Path) -> None:
+        """Visual mode does not call extract_images."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="visual")
+
+        page = _make_page_image(0)
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.build_pptx", return_value=output_path),
+            patch("noteeditor.pipeline.extract_images") as mock_img,
+        ):
+            run_pipeline(config)
+
+        mock_img.assert_not_called()
+
     def test_visual_does_not_create_model_manager(self, tmp_path: Path) -> None:
         """Visual mode does not create ModelManager."""
         pdf_path = tmp_path / "test.pdf"
@@ -617,6 +709,7 @@ class TestModelManagerCreation:
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -658,6 +751,7 @@ class TestAllPagesFallback:
                 side_effect=RuntimeError("fail"),
             ),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),

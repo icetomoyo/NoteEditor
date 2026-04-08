@@ -12,6 +12,7 @@ from noteeditor.models.page import PageImage
 from noteeditor.models.slide import SlideContent
 from noteeditor.stages.background import extract_background
 from noteeditor.stages.builder import assemble_slide, build_editable_pptx, build_pptx
+from noteeditor.stages.image import extract_images
 from noteeditor.stages.layout import detect_layout
 from noteeditor.stages.ocr import extract_text
 from noteeditor.stages.parser import parse_pdf
@@ -65,8 +66,11 @@ def _run_editable_pipeline(
         try:
             layout = detect_layout(page, layout_session)
             ocr_results = extract_text(page, layout, ocr_session)
+            image_results = extract_images(page, layout)
             background = extract_background(page, layout)
-            slide = assemble_slide(page, layout, ocr_results, background)
+            slide = assemble_slide(
+                page, layout, ocr_results, background, image_results,
+            )
         except Exception:
             logger.warning(
                 "Page %d failed, falling back to screenshot",

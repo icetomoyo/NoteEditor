@@ -10,7 +10,12 @@ import pytest
 
 from noteeditor.errors import InputError
 from noteeditor.models.page import PageImage
-from noteeditor.stages.parser import parse_pdf, pixmap_to_numpy, render_page
+from noteeditor.stages.parser import (
+    _extract_embedded_resources,
+    parse_pdf,
+    pixmap_to_numpy,
+    render_page,
+)
 
 
 def _make_mock_pixmap(
@@ -226,3 +231,162 @@ class TestParsePdf:
             result = parse_pdf(pdf_path, 300)
 
         assert result == ()
+
+
+class TestExtractEmbeddedResources:
+    """Tests for _extract_embedded_resources."""
+
+    def _make_mock_rect(
+        self,
+        x0: float = 0,
+        y0: float = 0,
+        x1: float = 100,
+        y1: float = 100,
+    ) -> MagicMock:
+        rect = MagicMock()
+        rect.x0 = x0
+        rect.y0 = y0
+        rect.x1 = x1
+        rect.y1 = y1
+        return rect
+
+    def _make_mock_image_data(self, w: int = 50, h: int = 50) -> dict:
+        """Create mock image data dict like PyMuPDF's extract_image()."""
+        import io
+
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGB", (w, h), color=(128, 128, 128))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return {"image": buf.getvalue(), "ext": "png"}
+
+    def test_no_images_returns_empty(self) -> None:
+        """Page with no embedded images returns empty tuple."""
+        page = MagicMock()
+        page.get_images.return_value = []
+        doc = MagicMock()
+
+        result = _extract_embedded_resources(page, doc, 300)
+        assert result == ()
+
+    def test_extracts_single_image(self) -> None:
+        """Single embedded image is extracted correctly."""
+        rect = self._make_mock_rect(10, 20, 200, 170)
+        page = MagicMock()
+        page.get_images.return_value = [(1, 0, 0, 0, 8, "DeviceRGB", "", "Im0")]
+        page.get_image_rects.return_value = [rect]
+
+        doc = MagicMock()
+        doc.extract_image.return_value = self._make_mock_image_data(50, 50)
+
+        result = _extract_embedded_resources(page, doc, 300)
+
+        assert len(result) == 1
+        assert result[0].index == 1
+        assert result[0].width_px == 50
+        assert result[0].height_px == 50
+
+    def test_bbox_scaled_by_dpi(self) -> None:
+        """Bounding box coordinates are scaled from PDF points to pixels."""
+        rect = self._make_mock_rect(72, 72, 144, 144)  # 1x1 inch in PDF points
+        page = MagicMock()
+        page.get_images.return_value = [(1, 0, 0, 0, 8, "DeviceRGB", "", "Im0")]
+        page.get_image_rects.return_value = [rect]
+
+        doc = MagicMock()
+        doc.extract_image.return_value = self._make_mock_image_data(50, 50)
+
+        result = _extract_embedded_resources(page, doc, 300)
+
+        assert len(result) == 1
+        scale = 300 / 72.0
+        assert result[0].bbox.x == pytest.approx(72 * scale)
+        assert result[0].bbox.y == pytest.approx(72 * scale)
+        assert result[0].bbox.width == pytest.approx(72 * scale)
+        assert result[0].bbox.height == pytest.approx(72 * scale)
+
+    def test_deduplicates_same_xref(self) -> None:
+        """Same xref appearing multiple times is deduplicated."""
+        page = MagicMock()
+        page.get_images.return_value = [
+            (1, 0, 0, 0, 8, "DeviceRGB", "", "Im0"),
+            (1, 0, 0, 0, 8, "DeviceRGB", "", "Im0"),
+        ]
+        page.get_image_rects.return_value = [self._make_mock_rect()]
+
+        doc = MagicMock()
+        doc.extract_image.return_value = self._make_mock_image_data()
+
+        result = _extract_embedded_resources(page, doc, 300)
+        assert len(result) == 1
+
+    def test_filters_tiny_images(self) -> None:
+        """Images smaller than minimum area are filtered out."""
+        rect = self._make_mock_rect(0, 0, 5, 5)  # 5x5 = 25px² at scale=1
+        page = MagicMock()
+        page.get_images.return_value = [(1, 0, 0, 0, 8, "DeviceRGB", "", "Im0")]
+        page.get_image_rects.return_value = [rect]
+
+        doc = MagicMock()
+
+        # At 72 DPI, scale=1, so bbox is 5x5=25 px² which is < 100
+        result = _extract_embedded_resources(page, doc, 72)
+        assert len(result) == 0
+
+    def test_skips_xref_with_no_rects(self) -> None:
+        """Images with no bounding rects are skipped."""
+        page = MagicMock()
+        page.get_images.return_value = [(1, 0, 0, 0, 8, "DeviceRGB", "", "Im0")]
+        page.get_image_rects.return_value = []
+
+        doc = MagicMock()
+
+        result = _extract_embedded_resources(page, doc, 300)
+        assert len(result) == 0
+
+    def test_skips_unreadable_image(self) -> None:
+        """Images that fail to decode are skipped gracefully."""
+        rect = self._make_mock_rect()
+        page = MagicMock()
+        page.get_images.return_value = [(1, 0, 0, 0, 8, "DeviceRGB", "", "Im0")]
+        page.get_image_rects.return_value = [rect]
+
+        doc = MagicMock()
+        doc.extract_image.return_value = {"image": b"not_an_image", "ext": "png"}
+
+        result = _extract_embedded_resources(page, doc, 300)
+        assert len(result) == 0
+
+    def test_skips_extract_image_failure(self) -> None:
+        """Images where extract_image() raises are skipped."""
+        rect = self._make_mock_rect()
+        page = MagicMock()
+        page.get_images.return_value = [(1, 0, 0, 0, 8, "DeviceRGB", "", "Im0")]
+        page.get_image_rects.return_value = [rect]
+
+        doc = MagicMock()
+        doc.extract_image.side_effect = Exception("corrupt")
+
+        result = _extract_embedded_resources(page, doc, 300)
+        assert len(result) == 0
+
+    def test_render_page_passes_embedded_images(self) -> None:
+        """render_page includes embedded images when doc is provided."""
+        pixmap = _make_mock_pixmap(width=3300, height=2550, n=3)
+        page = _make_mock_page(pixmap=pixmap)
+        page.get_images.return_value = []
+        doc = MagicMock()
+
+        result = render_page(page, 0, 300, doc=doc)
+
+        assert result.embedded_images == ()
+
+    def test_render_page_without_doc_no_embedded(self) -> None:
+        """render_page without doc has empty embedded_images."""
+        pixmap = _make_mock_pixmap(width=3300, height=2550, n=3)
+        page = _make_mock_page(pixmap=pixmap)
+
+        result = render_page(page, 0, 300)
+
+        assert result.embedded_images == ()

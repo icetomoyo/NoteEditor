@@ -8,10 +8,10 @@ import numpy as np
 from pptx import Presentation
 from pptx.util import Emu, Pt
 
-from noteeditor.models.content import FontMatch, OCRResult
+from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult
 from noteeditor.models.layout import BoundingBox, LayoutRegion, LayoutResult, RegionLabel
 from noteeditor.models.page import PageImage
-from noteeditor.models.slide import SlideContent, TextBlock
+from noteeditor.models.slide import ImageBlock, SlideContent, TextBlock
 from noteeditor.stages.builder import (
     _add_text_box,
     _estimate_font_size,
@@ -106,6 +106,7 @@ def _make_text_block(
 def _make_slide_content(
     page_number: int = 0,
     text_blocks: tuple[TextBlock, ...] = (),
+    image_blocks: tuple[ImageBlock, ...] = (),
     status: str = "success",
     width_px: int = 4000,
     height_px: int = 2250,
@@ -118,7 +119,7 @@ def _make_slide_content(
         background_image=background_image,
         full_page_image=image,
         text_blocks=text_blocks,
-        image_blocks=(),
+        image_blocks=image_blocks,
         status=status,  # type: ignore[arg-type]
     )
 
@@ -300,14 +301,36 @@ class TestAssembleSlide:
 
         assert result.background_image is bg
 
-    def test_image_blocks_empty(self) -> None:
-        """v0.2.0 MVP: no image extraction."""
+    def test_image_blocks_empty_when_no_results(self) -> None:
+        """Without image_results, image_blocks is empty."""
         page = _make_page_image()
         layout = _make_layout_result()
 
         result = assemble_slide(page, layout, ())
 
         assert result.image_blocks == ()
+
+    def test_image_blocks_populated_from_results(self) -> None:
+        """image_results are converted to ImageBlocks."""
+        page = _make_page_image()
+        layout = _make_layout_result()
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        extracted = ExtractedImage(
+            region_id="img0",
+            image=img,
+            source="embedded",
+            bbox=BoundingBox(x=50, y=50, width=200, height=100),
+            width_px=200,
+            height_px=100,
+        )
+
+        result = assemble_slide(page, layout, (), image_results=(extracted,))
+
+        assert len(result.image_blocks) == 1
+        ib = result.image_blocks[0]
+        assert ib.region_id == "img0"
+        assert ib.source == "embedded"
+        assert ib.bbox.x == 50
 
     def test_full_page_image_from_page(self) -> None:
         """full_page_image comes from PageImage."""
@@ -574,3 +597,65 @@ class TestBuildEditablePptx:
         assert output.exists()
         prs = Presentation(str(output))
         assert len(prs.slides) == 1
+
+    def test_image_blocks_placed_as_pictures(self, tmp_path: Path) -> None:
+        """Image blocks are placed as picture shapes in PPTX."""
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        ib = ImageBlock(
+            region_id="img0",
+            bbox=BoundingBox(x=100, y=200, width=500, height=300),
+            image=img,
+            source="cropped",
+        )
+        slides = (_make_slide_content(image_blocks=(ib,)),)
+        output = tmp_path / "images.pptx"
+
+        build_editable_pptx(slides, output, dpi=300)
+
+        prs = Presentation(str(output))
+        slide = prs.slides[0]
+        # background + 1 image block = 2 shapes
+        assert len(slide.shapes) == 2
+
+    def test_image_block_position(self, tmp_path: Path) -> None:
+        """Image block position matches bbox at given DPI."""
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        ib = ImageBlock(
+            region_id="img0",
+            bbox=BoundingBox(x=100, y=200, width=500, height=300),
+            image=img,
+            source="cropped",
+        )
+        slides = (_make_slide_content(image_blocks=(ib,)),)
+        output = tmp_path / "img_pos.pptx"
+
+        build_editable_pptx(slides, output, dpi=300)
+
+        prs = Presentation(str(output))
+        slide = prs.slides[0]
+        # Second shape is the image block (first is background)
+        img_shape = [s for s in slide.shapes if s.shape_type == 13][1]
+        emu_per_px = 914400 / 300
+        assert img_shape.left == int(100 * emu_per_px)
+        assert img_shape.top == int(200 * emu_per_px)
+        assert img_shape.width == int(500 * emu_per_px)
+        assert img_shape.height == int(300 * emu_per_px)
+
+    def test_fallback_page_no_image_blocks(self, tmp_path: Path) -> None:
+        """Fallback pages don't place image blocks."""
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        ib = ImageBlock(
+            region_id="img0",
+            bbox=BoundingBox(x=100, y=200, width=500, height=300),
+            image=img,
+            source="cropped",
+        )
+        slides = (_make_slide_content(status="fallback", image_blocks=(ib,)),)
+        output = tmp_path / "fallback_img.pptx"
+
+        build_editable_pptx(slides, output, dpi=300)
+
+        prs = Presentation(str(output))
+        slide = prs.slides[0]
+        # Only background, no image block
+        assert len(slide.shapes) == 1

@@ -13,10 +13,10 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
-from noteeditor.models.content import FontMatch, OCRResult
+from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult
 from noteeditor.models.layout import LayoutRegion, LayoutResult, RegionLabel
 from noteeditor.models.page import PageImage
-from noteeditor.models.slide import SlideContent, TextBlock
+from noteeditor.models.slide import ImageBlock, SlideContent, TextBlock
 
 logger = logging.getLogger(__name__)
 
@@ -145,17 +145,19 @@ def assemble_slide(
     layout_result: LayoutResult,
     ocr_results: tuple[OCRResult, ...],
     background_image: np.ndarray | None = None,
+    image_results: tuple[ExtractedImage, ...] = (),
 ) -> SlideContent:
     """Assemble OCR results into SlideContent for the builder.
 
-    Maps OCRResults to TextBlocks using LayoutRegion data for positioning.
-    Creates fallback FontMatch (Arial) for v0.2.0 MVP.
+    Maps OCRResults to TextBlocks and ExtractedImages to ImageBlocks
+    using LayoutRegion data for positioning.
 
     Args:
         page_image: Source page image.
         layout_result: Layout detection result with region positions.
         ocr_results: OCR extraction results with text content.
         background_image: Clean background with text removed (v0.3.0).
+        image_results: Extracted images for IMAGE regions (Feature 014).
 
     Returns:
         Frozen SlideContent ready for build_editable_pptx().
@@ -182,12 +184,23 @@ def assemble_slide(
             ),
         )
 
+    image_blocks: list[ImageBlock] = []
+    for img in image_results:
+        image_blocks.append(
+            ImageBlock(
+                region_id=img.region_id,
+                bbox=img.bbox,
+                image=img.image,
+                source=img.source,
+            ),
+        )
+
     return SlideContent(
         page_number=page_image.page_number,
         background_image=background_image,
         full_page_image=page_image.image,
         text_blocks=tuple(text_blocks),
-        image_blocks=(),
+        image_blocks=tuple(image_blocks),
         status="success",
     )
 
@@ -234,6 +247,30 @@ def _add_text_box(
         p.alignment = PP_ALIGN.CENTER
     else:
         p.alignment = PP_ALIGN.LEFT
+
+
+def _add_image_block(
+    slide: Presentation.slides,
+    image_block: ImageBlock,
+    dpi: int,
+) -> None:
+    """Add an image block to a slide.
+
+    Position and size are converted from pixel coordinates to EMU using DPI.
+    """
+    bbox = image_block.bbox
+    emu_per_px = _EMU_PER_INCH / dpi
+
+    left = int(bbox.x * emu_per_px)
+    top = int(bbox.y * emu_per_px)
+    width = int(bbox.width * emu_per_px)
+    height = int(bbox.height * emu_per_px)
+
+    image_bytes = _image_to_bytes(image_block.image)
+    slide.shapes.add_picture(
+        io.BytesIO(image_bytes),
+        Emu(left), Emu(top), Emu(width), Emu(height),
+    )
 
 
 def build_editable_pptx(
@@ -285,10 +322,12 @@ def build_editable_pptx(
             Emu(width_emu), Emu(height_emu),
         )
 
-        # Text boxes only for successful pages (not fallback)
+        # Text boxes and images only for successful pages (not fallback)
         if slide_content.status != "fallback":
             for text_block in slide_content.text_blocks:
                 _add_text_box(slide, text_block, dpi)
+            for image_block in slide_content.image_blocks:
+                _add_image_block(slide, image_block, dpi)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(output_path))
