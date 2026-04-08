@@ -144,6 +144,7 @@ def assemble_slide(
     page_image: PageImage,
     layout_result: LayoutResult,
     ocr_results: tuple[OCRResult, ...],
+    background_image: np.ndarray | None = None,
 ) -> SlideContent:
     """Assemble OCR results into SlideContent for the builder.
 
@@ -154,6 +155,7 @@ def assemble_slide(
         page_image: Source page image.
         layout_result: Layout detection result with region positions.
         ocr_results: OCR extraction results with text content.
+        background_image: Clean background with text removed (v0.3.0).
 
     Returns:
         Frozen SlideContent ready for build_editable_pptx().
@@ -182,7 +184,7 @@ def assemble_slide(
 
     return SlideContent(
         page_number=page_image.page_number,
-        background_image=None,
+        background_image=background_image,
         full_page_image=page_image.image,
         text_blocks=tuple(text_blocks),
         image_blocks=(),
@@ -272,8 +274,11 @@ def build_editable_pptx(
     for slide_content in pages:
         slide = prs.slides.add_slide(blank_layout)
 
-        # Background: full page image as full-slide picture
-        image_bytes = _image_to_bytes(slide_content.full_page_image)
+        # Background: use clean background image if available, otherwise full page
+        bg = slide_content.background_image
+        if bg is None:
+            bg = slide_content.full_page_image
+        image_bytes = _image_to_bytes(bg)
         slide.shapes.add_picture(
             io.BytesIO(image_bytes),
             Emu(0), Emu(0),

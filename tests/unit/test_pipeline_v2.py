@@ -1,4 +1,4 @@
-"""Tests for pipeline v0.2.0 - 5-stage dispatch (Feature 012)."""
+"""Tests for pipeline v0.3.0 - 6-stage dispatch (Feature 013)."""
 
 from __future__ import annotations
 
@@ -53,6 +53,32 @@ def _make_layout_result(page_number: int = 0) -> LayoutResult:
     return LayoutResult(page_number=page_number, regions=())
 
 
+def _make_background_image() -> np.ndarray:
+    """Create a synthetic background image."""
+    return np.ones((100, 100, 3), dtype=np.uint8) * 200
+
+
+def _make_mock_slide(page_image: PageImage) -> MagicMock:
+    """Create a mock SlideContent."""
+    return MagicMock(
+        page_number=page_image.page_number,
+        background_image=_make_background_image(),
+        full_page_image=page_image.image,
+        text_blocks=(),
+        image_blocks=(),
+        status="success",
+    )
+
+
+def _setup_model_manager() -> tuple[MagicMock, MagicMock]:
+    """Create and return (MockMgr class, mock_mgr instance)."""
+    mock_mgr = MagicMock()
+    mock_mgr.get_layout_model.return_value = MagicMock()
+    mock_mgr.get_ocr_model.return_value = MagicMock()
+    MockMgr = MagicMock(return_value=mock_mgr)
+    return MockMgr, mock_mgr
+
+
 # ---------------------------------------------------------------------------
 # PipelineConfig tests
 # ---------------------------------------------------------------------------
@@ -62,7 +88,7 @@ class TestPipelineConfigV2:
     """Tests for PipelineConfig with mode and models_dir fields."""
 
     def test_default_mode_is_editable(self) -> None:
-        """Default mode is 'editable' for v0.2.0."""
+        """Default mode is 'editable' for v0.3.0."""
         config = PipelineConfig(
             input_path=Path("a.pdf"),
             output_path=Path("b.pptx"),
@@ -143,15 +169,15 @@ class TestBuildConfigV2:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline editable mode tests
+# Pipeline editable mode tests (6-stage)
 # ---------------------------------------------------------------------------
 
 
 class TestRunPipelineEditable:
-    """Tests for run_pipeline in editable mode (5-stage)."""
+    """Tests for run_pipeline in editable mode (6-stage)."""
 
     def test_editable_single_page(self, tmp_path: Path) -> None:
-        """Editable mode runs 5 stages for a single page."""
+        """Editable mode runs 6 stages for a single page."""
         pdf_path = tmp_path / "test.pdf"
         pdf_path.write_bytes(b"%PDF-1.4 mock")
         output_path = tmp_path / "output.pptx"
@@ -159,35 +185,31 @@ class TestRunPipelineEditable:
 
         page = _make_page_image(0)
         layout = _make_layout_result(0)
+        bg = _make_background_image()
+        MockMgr, _ = _setup_model_manager()
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background", return_value=bg,
+            ) as mock_bg,
             patch("noteeditor.pipeline.assemble_slide") as mock_assemble,
-            patch("noteeditor.pipeline.build_editable_pptx", return_value=output_path),
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
-
-            mock_assemble.return_value = MagicMock(
-                page_number=0,
-                background_image=None,
-                full_page_image=page.image,
-                text_blocks=(),
-                image_blocks=(),
-                status="success",
-            )
-
+            mock_assemble.return_value = _make_mock_slide(page)
             result = run_pipeline(config)
 
         assert result.total_pages == 1
         assert result.success_pages == 1
         assert result.failed_pages == 0
         assert result.output_path == output_path
+        mock_bg.assert_called_once()
 
     def test_editable_calls_detect_layout(self, tmp_path: Path) -> None:
         """Editable mode calls detect_layout for each page."""
@@ -198,30 +220,26 @@ class TestRunPipelineEditable:
 
         page = _make_page_image(0)
         layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
-            patch("noteeditor.pipeline.detect_layout", return_value=layout) as mock_layout,
+            patch(
+                "noteeditor.pipeline.detect_layout",
+                return_value=layout,
+            ) as mock_layout,
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch(
-                "noteeditor.pipeline.assemble_slide",
-                return_value=MagicMock(
-                    page_number=0,
-                    background_image=None,
-                    full_page_image=page.image,
-                    text_blocks=(),
-                    image_blocks=(),
-                    status="success",
-                ),
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
             ),
-            patch("noteeditor.pipeline.build_editable_pptx", return_value=output_path),
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch("noteeditor.pipeline.assemble_slide"),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
-
             run_pipeline(config)
 
         mock_layout.assert_called_once()
@@ -235,33 +253,90 @@ class TestRunPipelineEditable:
 
         page = _make_page_image(0)
         layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()) as mock_ocr,
             patch(
-                "noteeditor.pipeline.assemble_slide",
-                return_value=MagicMock(
-                    page_number=0,
-                    background_image=None,
-                    full_page_image=page.image,
-                    text_blocks=(),
-                    image_blocks=(),
-                    status="success",
-                ),
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
             ),
-            patch("noteeditor.pipeline.build_editable_pptx", return_value=output_path),
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch("noteeditor.pipeline.assemble_slide"),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
-
             run_pipeline(config)
 
         mock_ocr.assert_called_once()
+
+    def test_editable_calls_extract_background(self, tmp_path: Path) -> None:
+        """Editable mode calls extract_background for each page."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout),
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ) as mock_bg,
+            patch("noteeditor.pipeline.assemble_slide"),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            run_pipeline(config)
+
+        mock_bg.assert_called_once_with(page, layout)
+
+    def test_editable_passes_background_to_assemble(self, tmp_path: Path) -> None:
+        """Background image is passed to assemble_slide."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        bg = _make_background_image()
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout),
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_background", return_value=bg),
+            patch(
+                "noteeditor.pipeline.assemble_slide",
+            ) as mock_assemble,
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            run_pipeline(config)
+
+        # assemble_slide should receive background_image as 4th arg
+        call_args = mock_assemble.call_args
+        assert call_args[0][0] is page
+        assert call_args[0][1] is layout
+        assert call_args[0][3] is bg
 
     def test_editable_fallback_on_layout_error(self, tmp_path: Path) -> None:
         """If layout detection fails, page falls back to screenshot mode."""
@@ -271,28 +346,30 @@ class TestRunPipelineEditable:
         config = _make_config(str(pdf_path), str(output_path), mode="editable")
 
         page = _make_page_image(0)
+        MockMgr, _ = _setup_model_manager()
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
-            patch("noteeditor.pipeline.detect_layout", side_effect=RuntimeError("model error")),
+            patch(
+                "noteeditor.pipeline.detect_layout",
+                side_effect=RuntimeError("model error"),
+            ),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
             patch("noteeditor.pipeline.assemble_slide"),
             patch(
                 "noteeditor.pipeline.build_editable_pptx",
                 return_value=output_path,
             ) as mock_build,
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
-
             result = run_pipeline(config)
 
         assert result.failed_pages == 1
         assert result.success_pages == 0
-        # build_editable_pptx should still be called with a fallback slide
         mock_build.assert_called_once()
         slides_arg = mock_build.call_args[0][0]
         assert len(slides_arg) == 1
@@ -307,6 +384,7 @@ class TestRunPipelineEditable:
 
         page = _make_page_image(0)
         layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
@@ -315,18 +393,49 @@ class TestRunPipelineEditable:
                 "noteeditor.pipeline.extract_text",
                 side_effect=RuntimeError("ocr error"),
             ),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
             patch("noteeditor.pipeline.assemble_slide"),
             patch(
                 "noteeditor.pipeline.build_editable_pptx",
                 return_value=output_path,
             ) as mock_build,
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
+            result = run_pipeline(config)
 
+        assert result.failed_pages == 1
+        slides_arg = mock_build.call_args[0][0]
+        assert slides_arg[0].status == "fallback"
+
+    def test_editable_fallback_on_background_error(self, tmp_path: Path) -> None:
+        """If background extraction fails, page falls back."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout),
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                side_effect=RuntimeError("bg error"),
+            ),
+            patch("noteeditor.pipeline.assemble_slide"),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ) as mock_build,
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
             result = run_pipeline(config)
 
         assert result.failed_pages == 1
@@ -349,6 +458,8 @@ class TestRunPipelineEditable:
                 return layout0
             raise RuntimeError("layout failed for page 1")
 
+        MockMgr, _ = _setup_model_manager()
+
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page0, page1)),
             patch(
@@ -356,24 +467,18 @@ class TestRunPipelineEditable:
                 side_effect=_detect_layout_side_effect,
             ),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
             patch("noteeditor.pipeline.assemble_slide") as mock_assemble,
-            patch("noteeditor.pipeline.build_editable_pptx", return_value=output_path),
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
-
-            mock_assemble.return_value = MagicMock(
-                page_number=0,
-                background_image=None,
-                full_page_image=page0.image,
-                text_blocks=(),
-                image_blocks=(),
-                status="success",
-            )
-
+            mock_assemble.return_value = _make_mock_slide(page0)
             result = run_pipeline(config)
 
         assert result.total_pages == 2
@@ -400,7 +505,9 @@ class TestRunPipelineVisual:
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
-            patch("noteeditor.pipeline.build_pptx", return_value=output_path) as mock_build,
+            patch(
+                "noteeditor.pipeline.build_pptx", return_value=output_path,
+            ) as mock_build,
         ):
             result = run_pipeline(config)
 
@@ -445,6 +552,24 @@ class TestRunPipelineVisual:
 
         mock_ocr.assert_not_called()
 
+    def test_visual_does_not_call_background(self, tmp_path: Path) -> None:
+        """Visual mode does not call extract_background."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="visual")
+
+        page = _make_page_image(0)
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.build_pptx", return_value=output_path),
+            patch("noteeditor.pipeline.extract_background") as mock_bg,
+        ):
+            run_pipeline(config)
+
+        mock_bg.assert_not_called()
+
     def test_visual_does_not_create_model_manager(self, tmp_path: Path) -> None:
         """Visual mode does not create ModelManager."""
         pdf_path = tmp_path / "test.pdf"
@@ -486,30 +611,23 @@ class TestModelManagerCreation:
 
         page = _make_page_image(0)
         layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
             patch("noteeditor.pipeline.detect_layout", return_value=layout),
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch(
-                "noteeditor.pipeline.assemble_slide",
-                return_value=MagicMock(
-                    page_number=0,
-                    background_image=None,
-                    full_page_image=page.image,
-                    text_blocks=(),
-                    image_blocks=(),
-                    status="success",
-                ),
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
             ),
-            patch("noteeditor.pipeline.build_editable_pptx", return_value=output_path),
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch("noteeditor.pipeline.assemble_slide"),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
-
             run_pipeline(config)
 
         MockMgr.assert_called_once_with(models_dir=custom_models)
@@ -531,23 +649,26 @@ class TestAllPagesFallback:
         config = _make_config(str(pdf_path), str(output_path), mode="editable")
 
         pages = (_make_page_image(0), _make_page_image(1))
+        MockMgr, _ = _setup_model_manager()
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=pages),
-            patch("noteeditor.pipeline.detect_layout", side_effect=RuntimeError("fail")),
+            patch(
+                "noteeditor.pipeline.detect_layout",
+                side_effect=RuntimeError("fail"),
+            ),
             patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
             patch("noteeditor.pipeline.assemble_slide"),
             patch(
                 "noteeditor.pipeline.build_editable_pptx",
                 return_value=output_path,
             ) as mock_build,
-            patch("noteeditor.pipeline.ModelManager") as MockMgr,
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
         ):
-            mock_mgr = MagicMock()
-            mock_mgr.get_layout_model.return_value = MagicMock()
-            mock_mgr.get_ocr_model.return_value = MagicMock()
-            MockMgr.return_value = mock_mgr
-
             result = run_pipeline(config)
 
         assert result.total_pages == 2
@@ -565,7 +686,10 @@ class TestAllPagesFallback:
 
         with (
             patch("noteeditor.pipeline.parse_pdf", return_value=()),
-            patch("noteeditor.pipeline.build_editable_pptx", return_value=output_path),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
         ):
             result = run_pipeline(config)
 

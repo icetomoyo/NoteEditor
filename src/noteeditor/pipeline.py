@@ -10,6 +10,7 @@ from noteeditor.infra.config import PipelineConfig
 from noteeditor.infra.model_manager import ModelManager
 from noteeditor.models.page import PageImage
 from noteeditor.models.slide import SlideContent
+from noteeditor.stages.background import extract_background
 from noteeditor.stages.builder import assemble_slide, build_editable_pptx, build_pptx
 from noteeditor.stages.layout import detect_layout
 from noteeditor.stages.ocr import extract_text
@@ -46,7 +47,7 @@ def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
 ) -> tuple[list[SlideContent], int]:
-    """Run the 5-stage editable pipeline.
+    """Run the 6-stage editable pipeline.
 
     Returns (slides, failed_count).
     """
@@ -64,7 +65,8 @@ def _run_editable_pipeline(
         try:
             layout = detect_layout(page, layout_session)
             ocr_results = extract_text(page, layout, ocr_session)
-            slide = assemble_slide(page, layout, ocr_results)
+            background = extract_background(page, layout)
+            slide = assemble_slide(page, layout, ocr_results, background)
         except Exception:
             logger.warning(
                 "Page %d failed, falling back to screenshot",
@@ -83,7 +85,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     """Run the full pipeline: parse PDF → build PPTX.
 
     In 'visual' mode (v0.1.0 behavior): parse → build screenshot PPTX.
-    In 'editable' mode (v0.2.0): parse → layout → OCR → assemble → build editable PPTX.
+    In 'editable' mode (v0.3.0): parse → layout → OCR → background → assemble → build editable PPTX.
 
     Args:
         config: Pipeline configuration (input, output, DPI, mode, etc.).
@@ -108,7 +110,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
             failed_pages=0,
         )
 
-    # Editable mode: 5-stage pipeline
+    # Editable mode: 6-stage pipeline
     slides, failed = _run_editable_pipeline(pages, config)
 
     build_editable_pptx(tuple(slides), config.output_path, config.dpi)

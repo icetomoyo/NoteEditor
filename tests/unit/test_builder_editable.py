@@ -109,12 +109,13 @@ def _make_slide_content(
     status: str = "success",
     width_px: int = 4000,
     height_px: int = 2250,
+    background_image: np.ndarray | None = None,
 ) -> SlideContent:
     """Create a SlideContent with synthetic data."""
     image = np.random.randint(0, 255, (height_px, width_px, 3), dtype=np.uint8)
     return SlideContent(
         page_number=page_number,
-        background_image=None,
+        background_image=background_image,
         full_page_image=image,
         text_blocks=text_blocks,
         image_blocks=(),
@@ -280,14 +281,24 @@ class TestAssembleSlide:
 
         assert result.status == "success"
 
-    def test_background_image_is_none(self) -> None:
-        """v0.2.0 MVP: no background reconstruction."""
+    def test_background_image_is_none_by_default(self) -> None:
+        """Without background_image param, field is None."""
         page = _make_page_image()
         layout = _make_layout_result()
 
         result = assemble_slide(page, layout, ())
 
         assert result.background_image is None
+
+    def test_background_image_set_when_provided(self) -> None:
+        """When background_image is provided, it is set in SlideContent."""
+        page = _make_page_image()
+        layout = _make_layout_result()
+        bg = np.ones((2250, 4000, 3), dtype=np.uint8) * 200
+
+        result = assemble_slide(page, layout, (), background_image=bg)
+
+        assert result.background_image is bg
 
     def test_image_blocks_empty(self) -> None:
         """v0.2.0 MVP: no image extraction."""
@@ -537,3 +548,29 @@ class TestBuildEditablePptx:
         assert len(prs.slides[0].shapes) == 2
         # Second slide: background only
         assert len(prs.slides[1].shapes) == 1
+
+    def test_uses_background_image_when_available(self, tmp_path: Path) -> None:
+        """When background_image is set, it is used as slide background."""
+        bg = np.ones((2250, 4000, 3), dtype=np.uint8) * 200
+        slide = _make_slide_content(background_image=bg)
+        output = tmp_path / "with_bg.pptx"
+
+        build_editable_pptx((slide,), output, dpi=300)
+
+        assert output.exists()
+        prs = Presentation(str(output))
+        assert len(prs.slides) == 1
+        # Should have a picture shape (background)
+        assert len(prs.slides[0].shapes) >= 1
+
+    def test_falls_back_to_full_page_image(self, tmp_path: Path) -> None:
+        """When background_image is None, full_page_image is used."""
+        slide = _make_slide_content()
+        assert slide.background_image is None
+        output = tmp_path / "fallback_bg.pptx"
+
+        build_editable_pptx((slide,), output, dpi=300)
+
+        assert output.exists()
+        prs = Presentation(str(output))
+        assert len(prs.slides) == 1
