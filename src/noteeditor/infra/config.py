@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from noteeditor.errors import InputError
 
@@ -13,6 +14,8 @@ MAX_DPI: int = 1200
 DEFAULT_DPI: int = 300
 
 _ENV_DPI_KEY = "NOTEEDITOR_DPI"
+
+_DEFAULT_MODELS_DIR = Path("~/.noteeditor/models").expanduser()
 
 
 def _resolve_dpi(dpi: int | None) -> int:
@@ -49,6 +52,8 @@ def build_config(
     output_path: Path,
     dpi: int | None = None,
     verbose: bool = False,
+    mode: Literal["visual", "editable"] = "editable",
+    models_dir: Path | None = None,
 ) -> PipelineConfig:
     """Build PipelineConfig with CLI > env > defaults priority.
 
@@ -60,6 +65,8 @@ def build_config(
         output_path=output_path,
         dpi=resolved_dpi,
         verbose=verbose,
+        mode=mode,
+        models_dir=models_dir if models_dir is not None else _DEFAULT_MODELS_DIR,
     )
 
 
@@ -67,11 +74,12 @@ def build_config(
 class PipelineConfig:
     """Immutable pipeline configuration.
 
-    For v0.1.0, only essential fields are included.
-    Future versions will add mode, device, retry_pages, etc.
+    Supports both visual (screenshot) and editable modes.
     """
 
     input_path: Path
     output_path: Path
     dpi: int = 300
     verbose: bool = False
+    mode: Literal["visual", "editable"] = "editable"
+    models_dir: Path = _DEFAULT_MODELS_DIR

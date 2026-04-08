@@ -19,13 +19,15 @@ def _make_config(
     output_path: str = "output.pptx",
     dpi: int = 300,
     verbose: bool = False,
+    mode: str = "visual",
 ) -> PipelineConfig:
-    """Create a test PipelineConfig."""
+    """Create a test PipelineConfig (defaulting to visual mode)."""
     return PipelineConfig(
         input_path=Path(input_path),
         output_path=Path(output_path),
         dpi=dpi,
         verbose=verbose,
+        mode=mode,  # type: ignore[arg-type]
     )
 
 

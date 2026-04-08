@@ -15,8 +15,8 @@
 | 007 | 配置管理基础设施 | Internal | Medium | InProgress | v0.1.0 |
 | 009 | 布局检测（PP-DocLayout-V3） | New | Critical | Completed | v0.2.0 |
 | 010 | OCR 文字提取（GLM-OCR） | New | Critical | Completed | v0.2.0 |
-| 011 | 可编辑文本框放置 | New | Critical | InProgress | v0.2.0 |
-| 012 | Pipeline 多阶段扩展 | Internal | Critical | Planned | v0.2.0 |
+| 011 | 可编辑文本框放置 | New | Critical | Completed | v0.2.0 |
+| 012 | Pipeline 多阶段扩展 | Internal | Critical | Completed | v0.2.0 |
 | 013 | 程序化背景重建 | New | High | Planned | v0.3.0 |
 | 014 | 图片提取（嵌入资源优先） | New | High | Planned | v0.3.0 |
 | 015 | 字体映射表 | New | Medium | Planned | v0.4.0 |

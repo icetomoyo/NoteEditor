@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from noteeditor.infra.config import PipelineConfig
-from noteeditor.stages.builder import build_pptx
+from noteeditor.infra.model_manager import ModelManager
+from noteeditor.models.page import PageImage
+from noteeditor.models.slide import SlideContent
+from noteeditor.stages.builder import assemble_slide, build_editable_pptx, build_pptx
+from noteeditor.stages.layout import detect_layout
+from noteeditor.stages.ocr import extract_text
 from noteeditor.stages.parser import parse_pdf
 
 logger = logging.getLogger(__name__)
@@ -23,11 +28,65 @@ class PipelineResult:
     failed_pages: int
 
 
+def _make_fallback_slide(
+    page: PageImage,
+) -> SlideContent:
+    """Create a fallback SlideContent for a failed page."""
+    return SlideContent(
+        page_number=page.page_number,
+        background_image=None,
+        full_page_image=page.image,
+        text_blocks=(),
+        image_blocks=(),
+        status="fallback",
+    )
+
+
+def _run_editable_pipeline(
+    pages: tuple[PageImage, ...],
+    config: PipelineConfig,
+) -> tuple[list[SlideContent], int]:
+    """Run the 5-stage editable pipeline.
+
+    Returns (slides, failed_count).
+    """
+    if not pages:
+        return [], 0
+
+    model_mgr = ModelManager(models_dir=config.models_dir)
+    layout_session = model_mgr.get_layout_model()
+    ocr_session = model_mgr.get_ocr_model()
+
+    slides: list[SlideContent] = []
+    failed = 0
+
+    for page in pages:
+        try:
+            layout = detect_layout(page, layout_session)
+            ocr_results = extract_text(page, layout, ocr_session)
+            slide = assemble_slide(page, layout, ocr_results)
+        except Exception:
+            logger.warning(
+                "Page %d failed, falling back to screenshot",
+                page.page_number,
+                exc_info=True,
+            )
+            slide = _make_fallback_slide(page)
+            failed += 1
+
+        slides.append(slide)
+
+    return slides, failed
+
+
 def run_pipeline(config: PipelineConfig) -> PipelineResult:
-    """Run the full v0.1.0 pipeline: parse PDF → build PPTX.
+    """Run the full pipeline: parse PDF → build PPTX.
+
+    In 'visual' mode (v0.1.0 behavior): parse → build screenshot PPTX.
+    In 'editable' mode (v0.2.0): parse → layout → OCR → assemble → build editable PPTX.
 
     Args:
-        config: Pipeline configuration (input, output, DPI, etc.).
+        config: Pipeline configuration (input, output, DPI, mode, etc.).
 
     Returns:
         PipelineResult with statistics and output path.
@@ -37,15 +96,26 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     """
     # Stage 1: Parse PDF → PageImages
     pages = parse_pdf(config.input_path, config.dpi)
-
     total = len(pages)
 
-    # Stage 2: Build PPTX from page images
-    build_pptx(pages, config.output_path)
+    if config.mode == "visual":
+        # Visual mode: direct screenshot PPTX (v0.1.0 behavior)
+        build_pptx(pages, config.output_path)
+        return PipelineResult(
+            output_path=config.output_path,
+            total_pages=total,
+            success_pages=total,
+            failed_pages=0,
+        )
+
+    # Editable mode: 5-stage pipeline
+    slides, failed = _run_editable_pipeline(pages, config)
+
+    build_editable_pptx(tuple(slides), config.output_path, config.dpi)
 
     return PipelineResult(
         output_path=config.output_path,
         total_pages=total,
-        success_pages=total,
-        failed_pages=0,
+        success_pages=total - failed,
+        failed_pages=failed,
     )

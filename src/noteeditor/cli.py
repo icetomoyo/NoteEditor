@@ -56,8 +56,14 @@ def validate_dpi(dpi: int) -> int:
 @click.argument("input_pdf", type=click.Path(exists=True))
 @click.option("-o", "--output", default=None, help="Output PPTX file path.")
 @click.option("--dpi", default=300, help="Rendering DPI (default: 300).")
+@click.option(
+    "--mode",
+    type=click.Choice(["visual", "editable"]),
+    default="editable",
+    help="Output mode: visual (screenshot) or editable (default: editable).",
+)
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Enable verbose output.")
-def main(input_pdf: str, output: str | None, dpi: int, verbose: bool) -> None:
+def main(input_pdf: str, output: str | None, dpi: int, mode: str, verbose: bool) -> None:
     """Convert a NotebookLM PDF to PPTX."""
     try:
         pdf_path = validate_pdf(Path(input_pdf))
@@ -69,11 +75,13 @@ def main(input_pdf: str, output: str | None, dpi: int, verbose: bool) -> None:
             output_path=out_path,
             dpi=validated_dpi,
             verbose=verbose,
+            mode=mode,  # type: ignore[arg-type]
         )
 
         click.echo(f"Input:  {pdf_path}")
         click.echo(f"Output: {out_path}")
         click.echo(f"DPI:    {config.dpi}")
+        click.echo(f"Mode:   {config.mode}")
 
         result = run_pipeline(config)
 
