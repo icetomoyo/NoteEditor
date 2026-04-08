@@ -9,9 +9,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from pptx import Presentation
-from pptx.util import Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Emu, Pt
 
+from noteeditor.models.content import FontMatch, OCRResult
+from noteeditor.models.layout import LayoutRegion, LayoutResult, RegionLabel
 from noteeditor.models.page import PageImage
+from noteeditor.models.slide import SlideContent, TextBlock
 
 logger = logging.getLogger(__name__)
 
@@ -105,4 +110,185 @@ def build_pptx(
     prs.save(str(output_path))
 
     logger.info("Built PPTX: %s (%d slides)", output_path, len(pages))
+    return output_path
+
+
+# --- Editable mode (Feature 011) ---
+
+
+def _make_fallback_font_match(region_id: str, label: RegionLabel) -> FontMatch:
+    """Create a fallback FontMatch for v0.2.0 MVP (Arial).
+
+    Real font matching is deferred to v0.4.0.
+    """
+    return FontMatch(
+        region_id=region_id,
+        label=label,
+        font_name="Arial",
+        font_path=None,
+        system_fallback="Arial",
+        is_fallback=True,
+    )
+
+
+def _estimate_font_size(bbox_height_px: float, dpi: int) -> int:
+    """Estimate font size in points from bbox height in pixels.
+
+    Formula: font_size_pt = bbox_height_px * (72 / dpi) * 0.8
+    The 0.8 factor accounts for typical line-height vs font-size ratio.
+    """
+    return max(1, int(bbox_height_px * (72 / dpi) * 0.8))
+
+
+def assemble_slide(
+    page_image: PageImage,
+    layout_result: LayoutResult,
+    ocr_results: tuple[OCRResult, ...],
+) -> SlideContent:
+    """Assemble OCR results into SlideContent for the builder.
+
+    Maps OCRResults to TextBlocks using LayoutRegion data for positioning.
+    Creates fallback FontMatch (Arial) for v0.2.0 MVP.
+
+    Args:
+        page_image: Source page image.
+        layout_result: Layout detection result with region positions.
+        ocr_results: OCR extraction results with text content.
+
+    Returns:
+        Frozen SlideContent ready for build_editable_pptx().
+    """
+    region_by_id: dict[str, LayoutRegion] = {
+        r.region_id: r for r in layout_result.regions
+    }
+
+    text_blocks: list[TextBlock] = []
+    for ocr in ocr_results:
+        region = region_by_id.get(ocr.region_id)
+        if region is None:
+            continue
+
+        font_match = _make_fallback_font_match(ocr.region_id, region.label)
+        text_blocks.append(
+            TextBlock(
+                region_id=ocr.region_id,
+                bbox=region.bbox,
+                text=ocr.text,
+                font_match=font_match,
+                is_formula=ocr.is_formula,
+                formula_latex=ocr.formula_latex,
+            ),
+        )
+
+    return SlideContent(
+        page_number=page_image.page_number,
+        background_image=None,
+        full_page_image=page_image.image,
+        text_blocks=tuple(text_blocks),
+        image_blocks=(),
+        status="success",
+    )
+
+
+def _add_text_box(
+    slide: Presentation.slides,
+    text_block: TextBlock,
+    dpi: int,
+) -> None:
+    """Add a text box with white fill to a slide.
+
+    Position and size are converted from pixel coordinates to EMU using DPI.
+    Alignment is set based on the region label (TITLE=center, others=left).
+    """
+    bbox = text_block.bbox
+    emu_per_px = _EMU_PER_INCH / dpi
+
+    left = int(bbox.x * emu_per_px)
+    top = int(bbox.y * emu_per_px)
+    width = int(bbox.width * emu_per_px)
+    height = int(bbox.height * emu_per_px)
+
+    textbox = slide.shapes.add_textbox(
+        Emu(left), Emu(top), Emu(width), Emu(height),
+    )
+
+    # White fill background to cover original text in the screenshot
+    fill = textbox.fill
+    fill.solid()
+    fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    # Set text content and formatting
+    tf = textbox.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = text_block.text
+
+    run = p.runs[0]
+    run.font.size = Pt(_estimate_font_size(bbox.height, dpi))
+    run.font.name = "Arial"
+
+    # Alignment based on region type
+    if text_block.font_match.label == RegionLabel.TITLE:
+        p.alignment = PP_ALIGN.CENTER
+    else:
+        p.alignment = PP_ALIGN.LEFT
+
+
+def build_editable_pptx(
+    pages: tuple[SlideContent, ...],
+    output_path: Path,
+    dpi: int = 300,
+) -> Path:
+    """Build an editable PPTX with text boxes over screenshot backgrounds.
+
+    Each slide has the full page image as background, with white-filled text
+    boxes placed over text regions for direct editing.
+
+    Args:
+        pages: Tuple of SlideContent objects to render as slides.
+        output_path: Where to write the .pptx file.
+        dpi: DPI used for pixel-to-EMU coordinate conversion.
+
+    Returns:
+        The output_path (for chaining).
+    """
+    if not pages:
+        prs = Presentation()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        prs.save(str(output_path))
+        return output_path
+
+    # Determine slide dimensions from first page's image
+    first_h, first_w = pages[0].full_page_image.shape[:2]
+    aspect_ratio = first_w / first_h
+    width_emu, height_emu = detect_slide_dimensions(aspect_ratio)
+
+    prs = Presentation()
+    prs.slide_width = Emu(width_emu)
+    prs.slide_height = Emu(height_emu)
+
+    blank_layout = prs.slide_layouts[6]
+
+    for slide_content in pages:
+        slide = prs.slides.add_slide(blank_layout)
+
+        # Background: full page image as full-slide picture
+        image_bytes = _image_to_bytes(slide_content.full_page_image)
+        slide.shapes.add_picture(
+            io.BytesIO(image_bytes),
+            Emu(0), Emu(0),
+            Emu(width_emu), Emu(height_emu),
+        )
+
+        # Text boxes only for successful pages (not fallback)
+        if slide_content.status != "fallback":
+            for text_block in slide_content.text_blocks:
+                _add_text_box(slide, text_block, dpi)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    prs.save(str(output_path))
+
+    logger.info(
+        "Built editable PPTX: %s (%d slides)", output_path, len(pages),
+    )
     return output_path
