@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-NoteEditor converts Google NotebookLM PDF presentations into high-fidelity PPTX files using a 6-stage pipeline architecture.
+NoteEditor converts Google NotebookLM PDF presentations into high-fidelity PPTX files using an 8-stage pipeline architecture.
 
 ## Development Setup
 
@@ -20,7 +20,7 @@ uv sync --all-extras
 
 ## Architecture
 
-6-stage pipeline: Parser → Layout → Extract (OCR ∥ Image ∥ Font) → Background → Builder → Output
+8-stage pipeline: Parser → Layout → OCR → Image → Font → Background → Assemble → Builder
 
 All data between stages uses frozen dataclasses (immutable). See `docs/DD.md` for detailed design.
 

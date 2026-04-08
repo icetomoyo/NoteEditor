@@ -146,6 +146,7 @@ def assemble_slide(
     ocr_results: tuple[OCRResult, ...],
     background_image: np.ndarray | None = None,
     image_results: tuple[ExtractedImage, ...] = (),
+    font_matches: tuple[FontMatch, ...] = (),
 ) -> SlideContent:
     """Assemble OCR results into SlideContent for the builder.
 
@@ -158,12 +159,16 @@ def assemble_slide(
         ocr_results: OCR extraction results with text content.
         background_image: Clean background with text removed (v0.3.0).
         image_results: Extracted images for IMAGE regions (Feature 014).
+        font_matches: Font matching results for text regions (Feature 015).
 
     Returns:
         Frozen SlideContent ready for build_editable_pptx().
     """
     region_by_id: dict[str, LayoutRegion] = {
         r.region_id: r for r in layout_result.regions
+    }
+    font_by_region: dict[str, FontMatch] = {
+        f.region_id: f for f in font_matches
     }
 
     text_blocks: list[TextBlock] = []
@@ -172,7 +177,9 @@ def assemble_slide(
         if region is None:
             continue
 
-        font_match = _make_fallback_font_match(ocr.region_id, region.label)
+        font_match = font_by_region.get(ocr.region_id)
+        if font_match is None:
+            font_match = _make_fallback_font_match(ocr.region_id, region.label)
         text_blocks.append(
             TextBlock(
                 region_id=ocr.region_id,

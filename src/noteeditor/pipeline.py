@@ -12,6 +12,7 @@ from noteeditor.models.page import PageImage
 from noteeditor.models.slide import SlideContent
 from noteeditor.stages.background import extract_background
 from noteeditor.stages.builder import assemble_slide, build_editable_pptx, build_pptx
+from noteeditor.stages.font import match_fonts
 from noteeditor.stages.image import extract_images
 from noteeditor.stages.layout import detect_layout
 from noteeditor.stages.ocr import extract_text
@@ -48,7 +49,7 @@ def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
 ) -> tuple[list[SlideContent], int]:
-    """Run the 6-stage editable pipeline.
+    """Run the 7-stage editable pipeline.
 
     Returns (slides, failed_count).
     """
@@ -67,9 +68,11 @@ def _run_editable_pipeline(
             layout = detect_layout(page, layout_session)
             ocr_results = extract_text(page, layout, ocr_session)
             image_results = extract_images(page, layout)
+            font_matches = match_fonts(layout, config.fonts_dir)
             background = extract_background(page, layout)
             slide = assemble_slide(
                 page, layout, ocr_results, background, image_results,
+                font_matches,
             )
         except Exception:
             logger.warning(

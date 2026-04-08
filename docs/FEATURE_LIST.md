@@ -18,8 +18,8 @@
 | 011 | 可编辑文本框放置 | New | Critical | Completed | v0.2.0 |
 | 012 | Pipeline 多阶段扩展 | Internal | Critical | Completed | v0.2.0 |
 | 013 | 程序化背景重建 | New | High | Completed | v0.3.0 |
-| 014 | 图片提取（嵌入资源优先） | New | High | InProgress | v0.3.0 |
-| 015 | 字体映射表 | New | Medium | Planned | v0.4.0 |
+| 014 | 图片提取（嵌入资源优先） | New | High | Completed | v0.3.0 |
+| 015 | 字体映射表 | New | Medium | Completed | v0.4.0 |
 | 016 | 字号颜色估计 | New | Medium | Planned | v0.4.0 |
 | 017 | 布局精度调优 | Enhancement | High | Planned | v0.5.0 |
 | 018 | 进度显示 | Enhancement | Medium | Planned | v0.5.0 |

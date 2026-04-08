@@ -364,6 +364,39 @@ class TestAssembleSlide:
         assert tb.is_formula is True
         assert tb.formula_latex == "E=mc^2"
 
+    def test_uses_font_matches_when_provided(self) -> None:
+        """Font matches override fallback when provided."""
+        page = _make_page_image()
+        region = _make_layout_region(region_id="r1", label=RegionLabel.TITLE)
+        layout = _make_layout_result(regions=(region,))
+        ocr = _make_ocr_result(region_id="r1")
+
+        font = FontMatch(
+            region_id="r1",
+            label=RegionLabel.TITLE,
+            font_name="Google Sans",
+            font_path=Path("/fonts/GoogleSans-Bold.ttf"),
+            system_fallback="Arial",
+            is_fallback=False,
+        )
+
+        result = assemble_slide(page, layout, (ocr,), font_matches=(font,))
+
+        assert result.text_blocks[0].font_match.font_name == "Google Sans"
+        assert result.text_blocks[0].font_match.is_fallback is False
+
+    def test_falls_back_when_no_font_match(self) -> None:
+        """Uses fallback when font_matches is empty."""
+        page = _make_page_image()
+        region = _make_layout_region(region_id="r1")
+        layout = _make_layout_result(regions=(region,))
+        ocr = _make_ocr_result(region_id="r1")
+
+        result = assemble_slide(page, layout, (ocr,), font_matches=())
+
+        assert result.text_blocks[0].font_match.is_fallback is True
+        assert result.text_blocks[0].font_match.font_name == "Arial"
+
 
 class TestAddTextBox:
     """Tests for _add_text_box()."""

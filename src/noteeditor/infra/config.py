@@ -16,6 +16,7 @@ DEFAULT_DPI: int = 300
 _ENV_DPI_KEY = "NOTEEDITOR_DPI"
 
 _DEFAULT_MODELS_DIR = Path("~/.noteeditor/models").expanduser()
+_DEFAULT_FONTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fonts"
 
 
 def _resolve_dpi(dpi: int | None) -> int:
@@ -54,6 +55,7 @@ def build_config(
     verbose: bool = False,
     mode: Literal["visual", "editable"] = "editable",
     models_dir: Path | None = None,
+    fonts_dir: Path | None = None,
 ) -> PipelineConfig:
     """Build PipelineConfig with CLI > env > defaults priority.
 
@@ -67,6 +69,7 @@ def build_config(
         verbose=verbose,
         mode=mode,
         models_dir=models_dir if models_dir is not None else _DEFAULT_MODELS_DIR,
+        fonts_dir=fonts_dir if fonts_dir is not None else _DEFAULT_FONTS_DIR,
     )
 
 
@@ -83,3 +86,4 @@ class PipelineConfig:
     verbose: bool = False
     mode: Literal["visual", "editable"] = "editable"
     models_dir: Path = _DEFAULT_MODELS_DIR
+    fonts_dir: Path = _DEFAULT_FONTS_DIR
