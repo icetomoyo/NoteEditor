@@ -13,7 +13,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
-from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult
+from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult, TextStyle
 from noteeditor.models.layout import LayoutRegion, LayoutResult, RegionLabel
 from noteeditor.models.page import PageImage
 from noteeditor.models.slide import ImageBlock, SlideContent, TextBlock
@@ -147,6 +147,7 @@ def assemble_slide(
     background_image: np.ndarray | None = None,
     image_results: tuple[ExtractedImage, ...] = (),
     font_matches: tuple[FontMatch, ...] = (),
+    style_results: tuple[TextStyle, ...] = (),
 ) -> SlideContent:
     """Assemble OCR results into SlideContent for the builder.
 
@@ -160,6 +161,7 @@ def assemble_slide(
         background_image: Clean background with text removed (v0.3.0).
         image_results: Extracted images for IMAGE regions (Feature 014).
         font_matches: Font matching results for text regions (Feature 015).
+        style_results: Estimated text styles for text regions (Feature 016).
 
     Returns:
         Frozen SlideContent ready for build_editable_pptx().
@@ -169,6 +171,9 @@ def assemble_slide(
     }
     font_by_region: dict[str, FontMatch] = {
         f.region_id: f for f in font_matches
+    }
+    style_by_region: dict[str, TextStyle] = {
+        s.region_id: s for s in style_results
     }
 
     text_blocks: list[TextBlock] = []
@@ -180,6 +185,7 @@ def assemble_slide(
         font_match = font_by_region.get(ocr.region_id)
         if font_match is None:
             font_match = _make_fallback_font_match(ocr.region_id, region.label)
+        style = style_by_region.get(ocr.region_id)
         text_blocks.append(
             TextBlock(
                 region_id=ocr.region_id,
@@ -188,6 +194,7 @@ def assemble_slide(
                 font_match=font_match,
                 is_formula=ocr.is_formula,
                 formula_latex=ocr.formula_latex,
+                style=style,
             ),
         )
 
@@ -246,8 +253,16 @@ def _add_text_box(
     p.text = text_block.text
 
     run = p.runs[0]
-    run.font.size = Pt(_estimate_font_size(bbox.height, dpi))
-    run.font.name = "Arial"
+
+    # Use style if available, otherwise fall back to estimation
+    if text_block.style is not None:
+        run.font.size = Pt(text_block.style.font_size_pt)
+        r, g, b = text_block.style.font_color_rgb
+        run.font.color.rgb = RGBColor(r, g, b)
+    else:
+        run.font.size = Pt(_estimate_font_size(bbox.height, dpi))
+
+    run.font.name = text_block.font_match.font_name
 
     # Alignment based on region type
     if text_block.font_match.label == RegionLabel.TITLE:

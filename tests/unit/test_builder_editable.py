@@ -6,9 +6,10 @@ from pathlib import Path
 
 import numpy as np
 from pptx import Presentation
+from pptx.dml.color import RGBColor
 from pptx.util import Emu, Pt
 
-from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult
+from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult, TextStyle
 from noteeditor.models.layout import BoundingBox, LayoutRegion, LayoutResult, RegionLabel
 from noteeditor.models.page import PageImage
 from noteeditor.models.slide import ImageBlock, SlideContent, TextBlock
@@ -397,6 +398,36 @@ class TestAssembleSlide:
         assert result.text_blocks[0].font_match.is_fallback is True
         assert result.text_blocks[0].font_match.font_name == "Arial"
 
+    def test_uses_style_results_when_provided(self) -> None:
+        """Style results are attached to TextBlocks."""
+        page = _make_page_image()
+        region = _make_layout_region(region_id="r1", label=RegionLabel.TITLE)
+        layout = _make_layout_result(regions=(region,))
+        ocr = _make_ocr_result(region_id="r1")
+
+        style = TextStyle(
+            region_id="r1",
+            font_size_pt=18,
+            font_color_rgb=(128, 0, 0),
+        )
+
+        result = assemble_slide(page, layout, (ocr,), style_results=(style,))
+
+        assert result.text_blocks[0].style is not None
+        assert result.text_blocks[0].style.font_size_pt == 18
+        assert result.text_blocks[0].style.font_color_rgb == (128, 0, 0)
+
+    def test_style_none_when_not_provided(self) -> None:
+        """TextBlock style is None when no style_results."""
+        page = _make_page_image()
+        region = _make_layout_region(region_id="r1")
+        layout = _make_layout_result(regions=(region,))
+        ocr = _make_ocr_result(region_id="r1")
+
+        result = assemble_slide(page, layout, (ocr,))
+
+        assert result.text_blocks[0].style is None
+
 
 class TestAddTextBox:
     """Tests for _add_text_box()."""
@@ -455,8 +486,8 @@ class TestAddTextBox:
         expected_size = Pt(_estimate_font_size(60, 300))
         assert run.font.size == expected_size
 
-    def test_font_name_is_arial(self) -> None:
-        """Font name is set to Arial for v0.2.0 MVP."""
+    def test_font_name_uses_font_match(self) -> None:
+        """Font name comes from TextBlock's FontMatch (Arial for fallback)."""
         _, slide = self._make_slide()
         tb = _make_text_block()
 
@@ -464,7 +495,54 @@ class TestAddTextBox:
 
         shape = slide.shapes[0]
         run = shape.text_frame.paragraphs[0].runs[0]
-        assert run.font.name == "Arial"
+        assert run.font.name == "Arial"  # fallback font_match uses Arial
+
+    def test_style_font_size_overrides_estimation(self) -> None:
+        """When TextStyle is present, its font_size_pt is used."""
+        _, slide = self._make_slide()
+        tb = _make_text_block(height=60)
+        # Attach a style with different font size
+        styled = TextBlock(
+            region_id=tb.region_id,
+            bbox=tb.bbox,
+            text=tb.text,
+            font_match=tb.font_match,
+            is_formula=tb.is_formula,
+            style=TextStyle(
+                region_id=tb.region_id,
+                font_size_pt=24,
+                font_color_rgb=(0, 0, 0),
+            ),
+        )
+
+        _add_text_box(slide, styled, dpi=300)
+
+        shape = slide.shapes[0]
+        run = shape.text_frame.paragraphs[0].runs[0]
+        assert run.font.size == Pt(24)
+
+    def test_style_font_color_applied(self) -> None:
+        """When TextStyle is present, its font_color_rgb is applied."""
+        _, slide = self._make_slide()
+        tb = _make_text_block()
+        styled = TextBlock(
+            region_id=tb.region_id,
+            bbox=tb.bbox,
+            text=tb.text,
+            font_match=tb.font_match,
+            is_formula=tb.is_formula,
+            style=TextStyle(
+                region_id=tb.region_id,
+                font_size_pt=11,
+                font_color_rgb=(255, 0, 0),
+            ),
+        )
+
+        _add_text_box(slide, styled, dpi=300)
+
+        shape = slide.shapes[0]
+        run = shape.text_frame.paragraphs[0].runs[0]
+        assert run.font.color.rgb == RGBColor(255, 0, 0)
 
     def test_title_alignment_is_center(self) -> None:
         """Title text blocks are center-aligned."""

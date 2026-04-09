@@ -17,6 +17,7 @@ from noteeditor.stages.image import extract_images
 from noteeditor.stages.layout import detect_layout
 from noteeditor.stages.ocr import extract_text
 from noteeditor.stages.parser import parse_pdf
+from noteeditor.stages.style import estimate_styles
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
 ) -> tuple[list[SlideContent], int]:
-    """Run the 7-stage editable pipeline.
+    """Run the 9-stage editable pipeline.
 
     Returns (slides, failed_count).
     """
@@ -69,10 +70,11 @@ def _run_editable_pipeline(
             ocr_results = extract_text(page, layout, ocr_session)
             image_results = extract_images(page, layout)
             font_matches = match_fonts(layout, config.fonts_dir)
+            style_results = estimate_styles(page, layout)
             background = extract_background(page, layout)
             slide = assemble_slide(
                 page, layout, ocr_results, background, image_results,
-                font_matches,
+                font_matches, style_results,
             )
         except Exception:
             logger.warning(

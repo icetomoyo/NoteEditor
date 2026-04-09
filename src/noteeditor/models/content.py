@@ -52,3 +52,12 @@ class FontMatch:
     font_path: Path | None
     system_fallback: str | None
     is_fallback: bool
+
+
+@dataclass(frozen=True)
+class TextStyle:
+    """Estimated text style for a region."""
+
+    region_id: str
+    font_size_pt: int
+    font_color_rgb: tuple[int, int, int]

@@ -1,4 +1,4 @@
-"""Tests for pipeline v0.3.0 - 8-stage dispatch (Feature 015)."""
+"""Tests for pipeline v0.3.0 - 9-stage dispatch (Feature 016)."""
 
 from __future__ import annotations
 
@@ -174,7 +174,7 @@ class TestBuildConfigV2:
 
 
 class TestRunPipelineEditable:
-    """Tests for run_pipeline in editable mode (7-stage)."""
+    """Tests for run_pipeline in editable mode (9-stage)."""
 
     def test_editable_single_page(self, tmp_path: Path) -> None:
         """Editable mode runs 7 stages for a single page."""
@@ -194,6 +194,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background", return_value=bg,
             ) as mock_bg,
@@ -233,6 +234,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -265,6 +267,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()) as mock_ocr,
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -297,6 +300,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -365,6 +369,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()) as mock_img,
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -397,6 +402,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -432,6 +438,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()) as mock_font,
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -464,6 +471,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -481,6 +489,75 @@ class TestRunPipelineEditable:
         # font_matches is the 6th positional arg (index 5)
         call_args = mock_assemble.call_args
         assert call_args[0][5] == ()  # font_matches
+
+    def test_editable_calls_estimate_styles(self, tmp_path: Path) -> None:
+        """Editable mode calls estimate_styles for each page."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout),
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
+            patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()) as mock_style,
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
+            patch("noteeditor.pipeline.assemble_slide"),
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            run_pipeline(config)
+
+        mock_style.assert_called_once_with(page, layout)
+
+    def test_editable_passes_style_results_to_assemble(self, tmp_path: Path) -> None:
+        """Style results are passed to assemble_slide."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout),
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
+            patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
+            patch("noteeditor.pipeline.assemble_slide") as mock_assemble,
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            mock_assemble.return_value = _make_mock_slide(page)
+            run_pipeline(config)
+
+        # style_results is the 7th positional arg (index 6)
+        call_args = mock_assemble.call_args
+        assert call_args[0][6] == ()  # style_results
 
     def test_editable_fallback_on_layout_error(self, tmp_path: Path) -> None:
         """If layout detection fails, page falls back to screenshot mode."""
@@ -501,6 +578,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -541,6 +619,7 @@ class TestRunPipelineEditable:
             ),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -575,6 +654,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 side_effect=RuntimeError("bg error"),
@@ -619,6 +699,7 @@ class TestRunPipelineEditable:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -758,6 +839,24 @@ class TestRunPipelineVisual:
 
         mock_font.assert_not_called()
 
+    def test_visual_does_not_call_estimate_styles(self, tmp_path: Path) -> None:
+        """Visual mode does not call estimate_styles."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="visual")
+
+        page = _make_page_image(0)
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.build_pptx", return_value=output_path),
+            patch("noteeditor.pipeline.estimate_styles") as mock_style,
+        ):
+            run_pipeline(config)
+
+        mock_style.assert_not_called()
+
     def test_visual_does_not_create_model_manager(self, tmp_path: Path) -> None:
         """Visual mode does not create ModelManager."""
         pdf_path = tmp_path / "test.pdf"
@@ -807,6 +906,7 @@ class TestModelManagerCreation:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),
@@ -850,6 +950,7 @@ class TestAllPagesFallback:
             patch("noteeditor.pipeline.extract_text", return_value=()),
             patch("noteeditor.pipeline.extract_images", return_value=()),
             patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
             patch(
                 "noteeditor.pipeline.extract_background",
                 return_value=_make_background_image(),

@@ -7,7 +7,7 @@ from typing import Literal
 
 import numpy as np
 
-from noteeditor.models.content import FontMatch
+from noteeditor.models.content import FontMatch, TextStyle
 from noteeditor.models.page import BoundingBox
 
 
@@ -21,6 +21,7 @@ class TextBlock:
     font_match: FontMatch
     is_formula: bool
     formula_latex: str | None = None
+    style: TextStyle | None = None
 
 
 @dataclass(frozen=True)
