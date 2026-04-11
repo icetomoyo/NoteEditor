@@ -46,3 +46,4 @@ models/*.bin
 
 # CLAUDE
 .claude/
+.agent/
