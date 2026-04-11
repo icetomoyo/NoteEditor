@@ -1,4 +1,4 @@
-"""Pipeline orchestrator - serial dispatch of Parser → Builder."""
+"""Pipeline orchestrator - serial dispatch of processing stages."""
 
 from __future__ import annotations
 
@@ -50,16 +50,16 @@ def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
 ) -> tuple[list[SlideContent], int]:
-    """Run the 9-stage editable pipeline.
+    """Run the editable pipeline stages.
 
     Returns (slides, failed_count).
     """
     if not pages:
         return [], 0
 
-    model_mgr = ModelManager(models_dir=config.models_dir)
+    model_mgr = ModelManager(models_dir=config.models_dir, device=config.device)
     layout_session = model_mgr.get_layout_model()
-    ocr_session = model_mgr.get_ocr_model()
+    ocr_backend = model_mgr.create_ocr_backend()
 
     slides: list[SlideContent] = []
     failed = 0
@@ -67,7 +67,7 @@ def _run_editable_pipeline(
     for page in pages:
         try:
             layout = detect_layout(page, layout_session)
-            ocr_results = extract_text(page, layout, ocr_session)
+            ocr_results = extract_text(page, layout, ocr_backend)
             image_results = extract_images(page, layout)
             font_matches = match_fonts(layout, config.fonts_dir)
             style_results = estimate_styles(page, layout)
@@ -93,11 +93,12 @@ def _run_editable_pipeline(
 def run_pipeline(config: PipelineConfig) -> PipelineResult:
     """Run the full pipeline: parse PDF → build PPTX.
 
-    In 'visual' mode (v0.1.0 behavior): parse → build screenshot PPTX.
-    In 'editable' mode (v0.3.0): parse → layout → OCR → background → assemble → build editable PPTX.
+    In 'visual' mode: parse → build screenshot PPTX.
+    In 'editable' mode: parse → layout → OCR → image → font → style →
+        background → assemble → build editable PPTX.
 
     Args:
-        config: Pipeline configuration (input, output, DPI, mode, etc.).
+        config: Pipeline configuration (input, output, DPI, mode, device, etc.).
 
     Returns:
         PipelineResult with statistics and output path.
@@ -110,7 +111,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     total = len(pages)
 
     if config.mode == "visual":
-        # Visual mode: direct screenshot PPTX (v0.1.0 behavior)
+        # Visual mode: direct screenshot PPTX
         build_pptx(pages, config.output_path)
         return PipelineResult(
             output_path=config.output_path,
@@ -119,7 +120,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
             failed_pages=0,
         )
 
-    # Editable mode: 6-stage pipeline
+    # Editable mode: multi-stage pipeline
     slides, failed = _run_editable_pipeline(pages, config)
 
     build_editable_pptx(tuple(slides), config.output_path, config.dpi)

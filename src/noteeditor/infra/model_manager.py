@@ -1,11 +1,14 @@
-"""Model manager - load and verify ONNX models."""
+"""Model manager - load layout model and create OCR backend."""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import onnxruntime as ort  # type: ignore[import-untyped]
+
+from noteeditor.infra.ocr_backend import OCRBackend, create_ocr_backend
 
 _LAYOUT_MODEL_FILENAME = "pp_doclayout_v3.onnx"
 _LAYOUT_MODEL_URL = (
@@ -13,16 +16,10 @@ _LAYOUT_MODEL_URL = (
     "resolve/main/pp_doclayout_v3.onnx"
 )
 
-_OCR_MODEL_FILENAME = "glm_ocr.onnx"
-_OCR_MODEL_URL = (
-    "https://huggingface.co/THUDM/glm-ocr/"
-    "resolve/main/glm_ocr.onnx"
-)
-
 
 @dataclass(frozen=True)
 class ModelManager:
-    """Load and verify ONNX models for inference."""
+    """Load layout model (ONNX) and create OCR backend."""
 
     models_dir: Path
     device: str = "auto"
@@ -50,44 +47,40 @@ class ModelManager:
         except Exception as exc:
             raise RuntimeError(f"Failed to load layout model from {model_path}: {exc}") from exc
 
-    def get_ocr_model(self) -> ort.InferenceSession:
-        """Load the GLM-OCR text recognition model.
+    def create_ocr_backend(self) -> OCRBackend:
+        """Create an OCR backend based on the device setting.
 
         Raises:
-            FileNotFoundError: If the model file does not exist.
-                Message includes download URL and target path.
-            RuntimeError: If the model file exists but fails to load.
+            ValueError: For invalid device or missing API key when device=api.
+            RuntimeError: For device=auto when no backend is available.
         """
-        model_path = self.models_dir / _OCR_MODEL_FILENAME
-        if not model_path.exists():
-            msg = (
-                f"OCR model not found at {model_path}. "
-                f"Please download it from {_OCR_MODEL_URL} "
-                f"and place it in {self.models_dir}."
-            )
-            raise FileNotFoundError(msg)
-
-        providers = self._resolve_providers()
-        try:
-            return ort.InferenceSession(str(model_path), providers=providers)
-        except Exception as exc:
-            raise RuntimeError(f"Failed to load OCR model from {model_path}: {exc}") from exc
+        api_key = os.environ.get("ZHIPU_API_KEY")
+        return create_ocr_backend(self.device, api_key=api_key)
 
     def _resolve_providers(self) -> list[str]:
-        """Resolve ONNX Runtime execution providers based on device setting.
+        """Resolve ONNX Runtime execution providers for layout model.
 
         Raises:
-            ValueError: If device is not one of 'auto', 'cpu', 'gpu'.
+            ValueError: If device is not one of 'auto', 'cpu', 'gpu',
+                or any OCR-specific device.
         """
-        if self.device == "cpu":
+        # Layout model always uses ONNX, map device to providers
+        device = self.device
+
+        # OCR-specific devices default to auto for layout ONNX
+        if device in ("transformers", "ollama", "vllm", "api"):
+            device = "auto"
+
+        if device == "cpu":
             return ["CPUExecutionProvider"]
-        if self.device == "gpu":
+        if device == "gpu":
             return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        if self.device == "auto":
+        if device == "auto":
             available = ort.get_available_providers()
             if "CUDAExecutionProvider" in available:
                 return ["CUDAExecutionProvider", "CPUExecutionProvider"]
             return ["CPUExecutionProvider"]
         raise ValueError(
-            f"Invalid device '{self.device}'. Must be 'auto', 'cpu', or 'gpu'."
+            f"Invalid device '{self.device}'. "
+            "Must be one of: auto, transformers, ollama, vllm, api, cpu, gpu."
         )

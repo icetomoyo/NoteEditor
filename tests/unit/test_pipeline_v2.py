@@ -74,7 +74,7 @@ def _setup_model_manager() -> tuple[MagicMock, MagicMock]:
     """Create and return (MockMgr class, mock_mgr instance)."""
     mock_mgr = MagicMock()
     mock_mgr.get_layout_model.return_value = MagicMock()
-    mock_mgr.get_ocr_model.return_value = MagicMock()
+    mock_mgr.create_ocr_backend.return_value = MagicMock()
     MockMgr = MagicMock(return_value=mock_mgr)
     return MockMgr, mock_mgr
 
@@ -920,7 +920,7 @@ class TestModelManagerCreation:
         ):
             run_pipeline(config)
 
-        MockMgr.assert_called_once_with(models_dir=custom_models)
+        MockMgr.assert_called_once_with(models_dir=custom_models, device=config.device)
 
 
 # ---------------------------------------------------------------------------

@@ -62,8 +62,18 @@ def validate_dpi(dpi: int) -> int:
     default="editable",
     help="Output mode: visual (screenshot) or editable (default: editable).",
 )
+@click.option(
+    "-d",
+    "--device",
+    type=click.Choice(["auto", "transformers", "ollama", "vllm", "api", "cpu", "gpu"]),
+    default="auto",
+    help="OCR backend: auto, transformers, ollama, vllm, api, cpu, gpu (default: auto).",
+)
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Enable verbose output.")
-def main(input_pdf: str, output: str | None, dpi: int, mode: str, verbose: bool) -> None:
+def main(
+    input_pdf: str, output: str | None, dpi: int,
+    mode: str, device: str, verbose: bool,
+) -> None:
     """Convert a NotebookLM PDF to PPTX."""
     try:
         pdf_path = validate_pdf(Path(input_pdf))
@@ -76,12 +86,14 @@ def main(input_pdf: str, output: str | None, dpi: int, mode: str, verbose: bool)
             dpi=validated_dpi,
             verbose=verbose,
             mode=mode,  # type: ignore[arg-type]
+            device=device,
         )
 
         click.echo(f"Input:  {pdf_path}")
         click.echo(f"Output: {out_path}")
         click.echo(f"DPI:    {config.dpi}")
         click.echo(f"Mode:   {config.mode}")
+        click.echo(f"Device: {config.device}")
 
         result = run_pipeline(config)
 

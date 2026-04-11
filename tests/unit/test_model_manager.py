@@ -123,3 +123,42 @@ class TestResolveProviders:
         mgr = ModelManager(models_dir=tmp_path, device="tpu")
         with pytest.raises(ValueError, match="Invalid device"):
             mgr._resolve_providers()
+
+    def test_transformers_device_uses_auto_for_onnx(self, tmp_path: Path) -> None:
+        """OCR-specific devices (transformers) fall back to auto for ONNX layout."""
+        mgr = ModelManager(models_dir=tmp_path, device="transformers")
+        with patch(
+            "noteeditor.infra.model_manager.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        ):
+            providers = mgr._resolve_providers()
+        assert providers == ["CPUExecutionProvider"]
+
+    def test_ollama_device_uses_auto_for_onnx(self, tmp_path: Path) -> None:
+        """OCR-specific devices (ollama) fall back to auto for ONNX layout."""
+        mgr = ModelManager(models_dir=tmp_path, device="ollama")
+        with patch(
+            "noteeditor.infra.model_manager.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        ):
+            providers = mgr._resolve_providers()
+        assert providers == ["CPUExecutionProvider"]
+
+
+class TestCreateOcrBackend:
+    """Tests for create_ocr_backend()."""
+
+    def test_creates_backend(self, tmp_path: Path) -> None:
+        """create_ocr_backend returns a backend instance."""
+        mgr = ModelManager(models_dir=tmp_path, device="ollama")
+        backend = mgr.create_ocr_backend()
+        from noteeditor.infra.ocr_backend import OllamaBackend
+        assert isinstance(backend, OllamaBackend)
+
+    def test_api_reads_env_key(self, tmp_path: Path) -> None:
+        """device='api' reads ZHIPU_API_KEY from environment."""
+        mgr = ModelManager(models_dir=tmp_path, device="api")
+        with patch.dict("os.environ", {"ZHIPU_API_KEY": "test-key"}):
+            backend = mgr.create_ocr_backend()
+        from noteeditor.infra.ocr_backend import ZhipuAPIBackend
+        assert isinstance(backend, ZhipuAPIBackend)
