@@ -11,6 +11,8 @@ from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+from pptx.oxml import parse_xml
+from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult, TextStyle
@@ -223,8 +225,13 @@ def _add_text_box(
     slide: Presentation.slides,
     text_block: TextBlock,
     dpi: int,
+    has_clean_background: bool = False,
 ) -> None:
-    """Add a text box with white fill to a slide.
+    """Add a text box to a slide.
+
+    When has_clean_background is True (background extraction produced a clean
+    image), the text box has no fill (transparent). Otherwise, white fill is
+    used to cover the original text in the screenshot background.
 
     Position and size are converted from pixel coordinates to EMU using DPI.
     Alignment is set based on the region label (TITLE=center, others=left).
@@ -241,10 +248,14 @@ def _add_text_box(
         Emu(left), Emu(top), Emu(width), Emu(height),
     )
 
-    # White fill background to cover original text in the screenshot
-    fill = textbox.fill
-    fill.solid()
-    fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    if has_clean_background:
+        # Transparent fill — text sits on the already-cleaned background
+        textbox.fill.background()
+    else:
+        # White fill to cover original text in the screenshot
+        fill = textbox.fill
+        fill.solid()
+        fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
     # Set text content and formatting
     tf = textbox.text_frame
@@ -295,15 +306,48 @@ def _add_image_block(
     )
 
 
+def _set_slide_background_image(slide: object, image_bytes: bytes) -> None:
+    """Set a native slide background image via XML.
+
+    Uses blipFill on the slide's bgPr element so the background is
+    not selectable or movable by the user (unlike add_picture).
+    """
+    slide_part = slide.part  # type: ignore[union-attr]
+    image_stream = io.BytesIO(image_bytes)
+    _image_part, rId = slide_part.get_or_add_image_part(image_stream)
+
+    bg_elem = slide.background._element  # type: ignore[union-attr]
+
+    # Remove existing bgPr if present
+    existing = bg_elem.find(qn("p:bgPr"))
+    if existing is not None:
+        bg_elem.remove(existing)
+
+    bgPr = parse_xml(
+        '<p:bgPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>'
+    )
+    blipFill = parse_xml(
+        '<a:blipFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f'<a:blip r:embed="{rId}"/>'
+        "<a:stretch><a:fillRect/></a:stretch>"
+        "</a:blipFill>"
+    )
+    bgPr.append(blipFill)
+    bg_elem.append(bgPr)
+
+
 def build_editable_pptx(
     pages: tuple[SlideContent, ...],
     output_path: Path,
     dpi: int = 300,
 ) -> Path:
-    """Build an editable PPTX with text boxes over screenshot backgrounds.
+    """Build an editable PPTX with text boxes over backgrounds.
 
-    Each slide has the full page image as background, with white-filled text
-    boxes placed over text regions for direct editing.
+    When a clean background image is available, it is set as the native
+    slide background (not selectable/movable) and text boxes are transparent.
+    When no clean background exists, the full page screenshot is placed as
+    an add_picture fallback with white-filled text boxes.
 
     Args:
         pages: Tuple of SlideContent objects to render as slides.
@@ -333,21 +377,25 @@ def build_editable_pptx(
     for slide_content in pages:
         slide = prs.slides.add_slide(blank_layout)
 
-        # Background: use clean background image if available, otherwise full page
-        bg = slide_content.background_image
-        if bg is None:
-            bg = slide_content.full_page_image
-        image_bytes = _image_to_bytes(bg)
-        slide.shapes.add_picture(
-            io.BytesIO(image_bytes),
-            Emu(0), Emu(0),
-            Emu(width_emu), Emu(height_emu),
-        )
+        has_clean_bg = slide_content.background_image is not None
+
+        if has_clean_bg:
+            # Native slide background (not selectable/movable)
+            image_bytes = _image_to_bytes(slide_content.background_image)
+            _set_slide_background_image(slide, image_bytes)
+        else:
+            # Fallback: add_picture as full-slide image
+            image_bytes = _image_to_bytes(slide_content.full_page_image)
+            slide.shapes.add_picture(
+                io.BytesIO(image_bytes),
+                Emu(0), Emu(0),
+                Emu(width_emu), Emu(height_emu),
+            )
 
         # Text boxes and images only for successful pages (not fallback)
         if slide_content.status != "fallback":
             for text_block in slide_content.text_blocks:
-                _add_text_box(slide, text_block, dpi)
+                _add_text_box(slide, text_block, dpi, has_clean_bg)
             for image_block in slide_content.image_blocks:
                 _add_image_block(slide, image_block, dpi)
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.enum.dml import MSO_THEME_COLOR
 from pptx.util import Emu, Pt
 
 from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult, TextStyle
@@ -568,6 +569,28 @@ class TestAddTextBox:
         shape = slide.shapes[0]
         assert shape.text_frame.paragraphs[0].alignment == PP_ALIGN.LEFT
 
+    def test_white_fill_when_no_background(self) -> None:
+        """Text box has white fill when has_clean_background=False."""
+        _, slide = self._make_slide()
+        tb = _make_text_block()
+
+        _add_text_box(slide, tb, dpi=300, has_clean_background=False)
+
+        shape = slide.shapes[0]
+        assert shape.fill.fore_color.rgb == RGBColor(0xFF, 0xFF, 0xFF)
+
+    def test_no_fill_when_has_background(self) -> None:
+        """Text box has no fill (transparent) when has_clean_background=True."""
+        _, slide = self._make_slide()
+        tb = _make_text_block()
+
+        _add_text_box(slide, tb, dpi=300, has_clean_background=True)
+
+        shape = slide.shapes[0]
+        # background() sets fill to MSO_FILL_TYPE.BACKGROUND (transparent)
+        from pptx.enum.dml import MSO_FILL_TYPE
+        assert shape.fill.type == MSO_FILL_TYPE.BACKGROUND
+
 
 class TestBuildEditablePptx:
     """Tests for build_editable_pptx()."""
@@ -684,7 +707,7 @@ class TestBuildEditablePptx:
         assert len(prs.slides[1].shapes) == 1
 
     def test_uses_background_image_when_available(self, tmp_path: Path) -> None:
-        """When background_image is set, it is used as slide background."""
+        """When background_image is set, it is used as native slide background."""
         bg = np.ones((2250, 4000, 3), dtype=np.uint8) * 200
         slide = _make_slide_content(background_image=bg)
         output = tmp_path / "with_bg.pptx"
@@ -694,8 +717,25 @@ class TestBuildEditablePptx:
         assert output.exists()
         prs = Presentation(str(output))
         assert len(prs.slides) == 1
-        # Should have a picture shape (background)
-        assert len(prs.slides[0].shapes) >= 1
+        # Native background → no picture shapes added for background
+        # Only shapes are content elements (text boxes, images), not background
+        assert len(prs.slides[0].shapes) == 0
+
+    def test_transparent_fill_when_background_image(self, tmp_path: Path) -> None:
+        """Text boxes have transparent fill when background_image is available."""
+        bg = np.ones((2250, 4000, 3), dtype=np.uint8) * 200
+        tb = _make_text_block(text="Over clean bg")
+        slide = _make_slide_content(background_image=bg, text_blocks=(tb,))
+        output = tmp_path / "transparent.pptx"
+
+        build_editable_pptx((slide,), output, dpi=300)
+
+        prs = Presentation(str(output))
+        text_shapes = [s for s in prs.slides[0].shapes if s.has_text_frame]
+        assert len(text_shapes) == 1
+        # Transparent fill → MSO_FILL_TYPE.BACKGROUND
+        from pptx.enum.dml import MSO_FILL_TYPE
+        assert text_shapes[0].fill.type == MSO_FILL_TYPE.BACKGROUND
 
     def test_falls_back_to_full_page_image(self, tmp_path: Path) -> None:
         """When background_image is None, full_page_image is used."""
