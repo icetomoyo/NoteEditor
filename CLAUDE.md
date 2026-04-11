@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-NoteEditor converts Google NotebookLM PDF presentations into high-fidelity PPTX files using an 8-stage pipeline architecture.
+NoteEditor converts Google NotebookLM PDF presentations into high-fidelity PPTX files using a multi-stage pipeline architecture.
 
 ## Development Setup
 
@@ -20,9 +20,12 @@ uv sync --all-extras
 
 ## Architecture
 
-8-stage pipeline: Parser → Layout → OCR → Image → Font → Background → Assemble → Builder
+Multi-stage pipeline: Parser → Layout(+NMS) → OCR(via Backend) → Image → Font → Style → Background → Assemble → Builder
 
-All data between stages uses frozen dataclasses (immutable). See `docs/DD.md` for detailed design.
+- Layout detection: PP-DocLayout-V3 via ONNX Runtime
+- OCR: GLM-OCR via pluggable backend (Transformers / Ollama / vLLM / API)
+- All data between stages uses frozen dataclasses (immutable)
+- See `docs/DD.md` for detailed design
 
 ## Key Conventions
 
@@ -37,15 +40,16 @@ All data between stages uses frozen dataclasses (immutable). See `docs/DD.md` fo
 - `docs/PRD.md` - Product requirements
 - `docs/HLD.md` - High-level architecture
 - `docs/DD.md` - Detailed data structures and algorithms
-- `docs/features/v0.1.0.md` - Current version feature specs
+- `docs/features/v0.1.0.md` ~ `v0.4.0.md` - Completed version feature specs
+- `docs/features/v0.5.0.md` - Final version feature specs
 
 ## Version Planning
 
-- v0.1.0: Project skeleton, basic PDF→screenshot→PPTX chain
-- v0.2.0-v0.4.0: Visual fidelity MVP
-- v0.5.0-v0.7.0: OCR, layout precision, font matching
-- v0.8.0: NotebookLM-complete with editable mode
-- v1.0.0: General presentation PDF support
+- v0.1.0: Project skeleton, basic PDF→screenshot→PPTX chain ✅
+- v0.2.0: Editable MVP (layout + OCR + text boxes) ✅
+- v0.3.0: Background extraction + image extraction ✅
+- v0.4.0: Font matching + style estimation ✅
+- v0.5.0: Final release (OCR backend refactor, quality fixes, UX, LaMA, checkpoint)
 
 ## Commit Message Format
 
