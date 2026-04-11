@@ -40,16 +40,14 @@ Multi-stage pipeline: Parser → Layout(+NMS) → OCR(via Backend) → Image →
 - `docs/PRD.md` - Product requirements
 - `docs/HLD.md` - High-level architecture
 - `docs/DD.md` - Detailed data structures and algorithms
-- `docs/features/v0.1.0.md` ~ `v0.4.0.md` - Completed version feature specs
-- `docs/features/v0.5.0.md` - Final version feature specs
+- `docs/features/v0.1.0.md` - v0.1.x development phase feature specs
+- `docs/features/v0.2.0.md` - v0.2.0 (final release) feature specs
+- `docs/features/archive/` - Historical feature specs from earlier phases
 
 ## Version Planning
 
-- v0.1.0: Project skeleton, basic PDF→screenshot→PPTX chain ✅
-- v0.2.0: Editable MVP (layout + OCR + text boxes) ✅
-- v0.3.0: Background extraction + image extraction ✅
-- v0.4.0: Font matching + style estimation ✅
-- v0.5.0: Final release (OCR backend refactor, quality fixes, UX, LaMA, checkpoint)
+- v0.1.x: All base features completed (skeleton → editable → background → fonts → OCR backend) ✅
+- v0.2.0: Final release (quality fixes, UX, LaMA, checkpoint)
 
 ## Commit Message Format
 
