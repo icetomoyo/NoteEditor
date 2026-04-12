@@ -124,6 +124,61 @@ def _parse_detections(
     return regions
 
 
+def _compute_iou(a: BoundingBox, b: BoundingBox) -> float:
+    """Compute Intersection over Union of two bounding boxes."""
+    x1 = max(a.x, b.x)
+    y1 = max(a.y, b.y)
+    x2 = min(a.x + a.width, b.x + b.width)
+    y2 = min(a.y + a.height, b.y + b.height)
+
+    if x2 <= x1 or y2 <= y1:
+        return 0.0
+
+    intersection = (x2 - x1) * (y2 - y1)
+    area_a = a.width * a.height
+    area_b = b.width * b.height
+    union = area_a + area_b - intersection
+
+    if union <= 0:
+        return 0.0
+
+    return intersection / union
+
+
+def _nms(
+    regions: tuple[LayoutRegion, ...],
+    iou_threshold: float = 0.5,
+) -> tuple[LayoutRegion, ...]:
+    """Non-Maximum Suppression: remove overlapping detections.
+
+    Keeps the highest-confidence region among overlapping pairs.
+    Regions are processed in descending confidence order.
+
+    Args:
+        regions: Detected regions (any order).
+        iou_threshold: Overlap threshold above which to suppress.
+
+    Returns:
+        Filtered tuple of non-overlapping regions.
+    """
+    if len(regions) <= 1:
+        return regions
+
+    sorted_regions = sorted(regions, key=lambda r: r.confidence, reverse=True)
+    kept: list[LayoutRegion] = []
+
+    for region in sorted_regions:
+        suppressed = False
+        for kept_region in kept:
+            if _compute_iou(region.bbox, kept_region.bbox) > iou_threshold:
+                suppressed = True
+                break
+        if not suppressed:
+            kept.append(region)
+
+    return tuple(kept)
+
+
 def _filter_low_confidence(
     regions: list[LayoutRegion],
     threshold: float = 0.5,
@@ -167,6 +222,7 @@ def detect_layout(
 
     regions = _parse_detections(raw, page_image)
     filtered = _filter_low_confidence(regions, confidence_threshold)
-    sorted_regions = tuple(sorted(filtered, key=lambda r: r.confidence, reverse=True))
+    deduped = _nms(filtered)
+    sorted_regions = tuple(sorted(deduped, key=lambda r: r.confidence, reverse=True))
 
     return LayoutResult(page_number=page_image.page_number, regions=sorted_regions)

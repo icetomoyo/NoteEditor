@@ -11,6 +11,7 @@ from noteeditor.models.layout import BoundingBox, LayoutRegion, LayoutResult, Re
 from noteeditor.models.page import PageImage
 from noteeditor.stages.layout import (
     _filter_low_confidence,
+    _nms,
     _parse_detections,
     _preprocess,
     detect_layout,
@@ -328,3 +329,108 @@ class TestDetectLayout:
         session.run.side_effect = RuntimeError("ONNX: internal error")
         with pytest.raises(RuntimeError, match="Layout detection inference failed"):
             detect_layout(page, session)
+
+    def test_nms_removes_overlapping_regions(self) -> None:
+        """Overlapping regions with IoU > 0.5 are suppressed."""
+        # Two nearly identical boxes, different confidence
+        raw = np.array(
+            [
+                [6, 0.9, 10.0, 10.0, 200.0, 100.0, 0.0, 0.0],   # high conf
+                [22, 0.7, 15.0, 12.0, 205.0, 102.0, 0.0, 0.0],  # overlap, lower
+            ],
+            dtype=np.float32,
+        )
+        page = _make_page_image()
+        session = _make_mock_session(raw)
+        result = detect_layout(page, session)
+        # NMS should keep only the higher-confidence one
+        assert len(result.regions) == 1
+        assert result.regions[0].confidence == pytest.approx(0.9)
+
+    def test_nms_keeps_non_overlapping(self) -> None:
+        """Non-overlapping regions are all kept."""
+        raw = np.array(
+            [
+                [6, 0.9, 10.0, 10.0, 100.0, 50.0, 0.0, 0.0],
+                [22, 0.8, 500.0, 300.0, 700.0, 400.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        page = _make_page_image()
+        session = _make_mock_session(raw)
+        result = detect_layout(page, session)
+        assert len(result.regions) == 2
+
+
+class TestNms:
+    """Tests for _nms() function."""
+
+    def _make_region(
+        self,
+        region_id: str,
+        x: float, y: float, w: float, h: float,
+        confidence: float,
+        label: RegionLabel = RegionLabel.BODY_TEXT,
+    ) -> LayoutRegion:
+        return LayoutRegion(
+            bbox=BoundingBox(x=x, y=y, width=w, height=h),
+            label=label,
+            confidence=confidence,
+            region_id=region_id,
+        )
+
+    def test_empty_input(self) -> None:
+        assert _nms((), 0.5) == ()
+
+    def test_single_region(self) -> None:
+        r = self._make_region("r0", 0, 0, 100, 50, 0.9)
+        result = _nms((r,), 0.5)
+        assert len(result) == 1
+
+    def test_no_overlap(self) -> None:
+        r1 = self._make_region("r1", 0, 0, 100, 50, 0.9)
+        r2 = self._make_region("r2", 500, 500, 100, 50, 0.8)
+        result = _nms((r1, r2), 0.5)
+        assert len(result) == 2
+
+    def test_full_overlap_keeps_higher(self) -> None:
+        r1 = self._make_region("r1", 10, 10, 100, 50, 0.9)
+        r2 = self._make_region("r2", 10, 10, 100, 50, 0.7)
+        result = _nms((r1, r2), 0.5)
+        assert len(result) == 1
+        assert result[0].region_id == "r1"
+
+    def test_partial_overlap_above_threshold(self) -> None:
+        # Two boxes with significant overlap (IoU ≈ 0.68)
+        r1 = self._make_region("r1", 0, 0, 100, 100, 0.9)
+        r2 = self._make_region("r2", 10, 10, 100, 100, 0.7)
+        # intersection=90*90=8100, union=10000+10000-8100=11900, IoU≈0.68
+        result = _nms((r1, r2), 0.5)
+        assert len(result) == 1
+        assert result[0].region_id == "r1"
+
+    def test_partial_overlap_below_threshold(self) -> None:
+        # Two boxes with small overlap (IoU < 0.5)
+        r1 = self._make_region("r1", 0, 0, 100, 100, 0.9)
+        r2 = self._make_region("r2", 80, 80, 100, 100, 0.7)
+        result = _nms((r1, r2), 0.5)
+        assert len(result) == 2
+
+    def test_preserves_label_and_bbox(self) -> None:
+        r = self._make_region("r1", 10, 20, 300, 40, 0.9, RegionLabel.TITLE)
+        result = _nms((r,), 0.5)
+        assert result[0].label == RegionLabel.TITLE
+        assert result[0].bbox.x == 10
+
+    def test_returns_tuple(self) -> None:
+        r = self._make_region("r1", 0, 0, 100, 50, 0.9)
+        result = _nms((r,), 0.5)
+        assert isinstance(result, tuple)
+
+    def test_three_overlapping_keeps_best(self) -> None:
+        r1 = self._make_region("r1", 10, 10, 100, 50, 0.6)
+        r2 = self._make_region("r2", 12, 12, 100, 50, 0.9)
+        r3 = self._make_region("r3", 14, 11, 100, 50, 0.7)
+        result = _nms((r1, r2, r3), 0.5)
+        assert len(result) == 1
+        assert result[0].region_id == "r2"
