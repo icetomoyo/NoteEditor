@@ -47,3 +47,4 @@ models/*.bin
 # CLAUDE
 .claude/
 .agent/
+AGENTS.md

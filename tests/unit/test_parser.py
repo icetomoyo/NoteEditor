@@ -190,8 +190,8 @@ class TestParsePdf:
         with pytest.raises(InputError, match="DPI must be a positive integer"):
             parse_pdf(Path("dummy.pdf"), -150)
 
-    def test_single_page_failure_skipped(self, tmp_path: Path) -> None:
-        """If one page fails to render, it is skipped and others are returned."""
+    def test_single_page_failure_returns_placeholder(self, tmp_path: Path) -> None:
+        """If one page fails to render, a blank placeholder is returned."""
         pdf_path = tmp_path / "test.pdf"
         pdf_path.write_bytes(b"%PDF-1.4 mock")
 
@@ -213,9 +213,11 @@ class TestParsePdf:
         with patch("noteeditor.stages.parser.fitz.open", return_value=mock_doc):
             result = parse_pdf(pdf_path, 300)
 
-        assert len(result) == 2
+        # All 3 pages returned (failed page gets blank placeholder)
+        assert len(result) == 3
         assert result[0].page_number == 0
-        assert result[1].page_number == 2
+        assert result[1].page_number == 1  # placeholder for failed page
+        assert result[2].page_number == 2
 
     def test_empty_pdf_returns_empty_tuple(self, tmp_path: Path) -> None:
         """PDF with zero pages returns empty tuple."""

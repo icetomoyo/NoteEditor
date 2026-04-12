@@ -8,6 +8,7 @@ from enum import StrEnum
 from noteeditor.models.page import BoundingBox
 
 __all__ = [
+    "BoundingBox",
     "LayoutRegion",
     "LayoutResult",
     "RegionLabel",

@@ -228,5 +228,17 @@ def parse_pdf(input_path: Path, dpi: int) -> tuple[PageImage, ...]:
                 logger.warning(
                     "Failed to render page %d/%d: %s", page_num + 1, total_pages, e
                 )
+                # Return a blank placeholder so the page is not silently lost.
+                # Pipeline will treat it as a regular page; if layout/OCR
+                # subsequently fails, the per-page fallback produces a blank slide.
+                blank = np.zeros((int(dpi * 7.5), int(dpi * 13.333), 3), dtype=np.uint8)
+                results.append(PageImage(
+                    page_number=page_num,
+                    width_px=blank.shape[1],
+                    height_px=blank.shape[0],
+                    dpi=dpi,
+                    aspect_ratio=blank.shape[1] / blank.shape[0],
+                    image=blank,
+                ))
 
     return tuple(results)

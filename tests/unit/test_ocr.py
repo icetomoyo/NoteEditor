@@ -257,7 +257,10 @@ class TestExtractText:
         ]
         layout = _make_layout_result(regions=regions)
         backend = _make_mock_backend([
-            OCRResponse(text="Hello World", is_formula=False, formula_latex=None, raw_output="Hello World"),
+            OCRResponse(
+                text="Hello World", is_formula=False,
+                formula_latex=None, raw_output="Hello World",
+            ),
         ])
         result = extract_text(page, layout, backend)
         assert len(result) == 1
@@ -273,8 +276,14 @@ class TestExtractText:
         ]
         layout = _make_layout_result(regions=regions)
         backend = _make_mock_backend([
-            OCRResponse(text="Title", is_formula=False, formula_latex=None, raw_output="Title"),
-            OCRResponse(text="Body text", is_formula=False, formula_latex=None, raw_output="Body text"),
+            OCRResponse(
+                text="Title", is_formula=False,
+                formula_latex=None, raw_output="Title",
+            ),
+            OCRResponse(
+                text="Body text", is_formula=False,
+                formula_latex=None, raw_output="Body text",
+            ),
         ])
         result = extract_text(page, layout, backend)
         assert len(result) == 2
@@ -288,7 +297,10 @@ class TestExtractText:
         ]
         layout = _make_layout_result(regions=regions)
         backend = _make_mock_backend([
-            OCRResponse(text="a^2+b^2=c^2", is_formula=True, formula_latex="a^2+b^2=c^2", raw_output=""),
+            OCRResponse(
+                text="a^2+b^2=c^2", is_formula=True,
+                formula_latex="a^2+b^2=c^2", raw_output="",
+            ),
         ])
         result = extract_text(page, layout, backend)
         assert len(result) == 1

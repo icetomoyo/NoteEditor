@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -222,7 +223,7 @@ def assemble_slide(
 
 
 def _add_text_box(
-    slide: Presentation.slides,
+    slide: Any,
     text_block: TextBlock,
     dpi: int,
     has_clean_background: bool = False,
@@ -283,7 +284,7 @@ def _add_text_box(
 
 
 def _add_image_block(
-    slide: Presentation.slides,
+    slide: Any,
     image_block: ImageBlock,
     dpi: int,
 ) -> None:
@@ -306,17 +307,17 @@ def _add_image_block(
     )
 
 
-def _set_slide_background_image(slide: object, image_bytes: bytes) -> None:
+def _set_slide_background_image(slide: Any, image_bytes: bytes) -> None:
     """Set a native slide background image via XML.
 
     Uses blipFill on the slide's bgPr element so the background is
     not selectable or movable by the user (unlike add_picture).
     """
-    slide_part = slide.part  # type: ignore[union-attr]
+    slide_part = slide.part
     image_stream = io.BytesIO(image_bytes)
     _image_part, rId = slide_part.get_or_add_image_part(image_stream)
 
-    bg_elem = slide.background._element  # type: ignore[union-attr]
+    bg_elem = slide.background._element
 
     # Remove existing bgPr if present
     existing = bg_elem.find(qn("p:bgPr"))
@@ -379,7 +380,7 @@ def build_editable_pptx(
 
         has_clean_bg = slide_content.background_image is not None
 
-        if has_clean_bg:
+        if has_clean_bg and slide_content.background_image is not None:
             # Native slide background (not selectable/movable)
             image_bytes = _image_to_bytes(slide_content.background_image)
             _set_slide_background_image(slide, image_bytes)

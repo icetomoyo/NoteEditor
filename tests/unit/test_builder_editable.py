@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.dml import MSO_THEME_COLOR
 from pptx.util import Emu, Pt
 
 from noteeditor.models.content import ExtractedImage, FontMatch, OCRResult, TextStyle

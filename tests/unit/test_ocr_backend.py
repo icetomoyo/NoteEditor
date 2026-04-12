@@ -15,8 +15,7 @@ from noteeditor.infra.ocr_backend import (
     VLLMBackend,
     ZhipuAPIBackend,
     create_ocr_backend,
-)
-
+)  # noqa: I001
 
 # --- OCRResponse ---
 
@@ -248,10 +247,9 @@ class TestTransformersBackend:
 
     def test_is_available_no_torch(self) -> None:
         with patch.dict("sys.modules", {"torch": None, "transformers": None}):
-            backend = TransformersBackend()
+            TransformersBackend()
             # Can't reliably test importability in mocked env,
             # but at minimum it should not crash
-            # Real availability depends on torch being installed
 
     def test_recognize_calls_model(self) -> None:
         """Test that recognize loads model lazily and calls generate."""
@@ -310,6 +308,14 @@ class TestCreateOcrBackend:
     def test_api_without_key_raises(self) -> None:
         with pytest.raises(ValueError, match="API key"):
             create_ocr_backend("api")
+
+    def test_cpu_maps_to_transformers(self) -> None:
+        backend = create_ocr_backend("cpu")
+        assert isinstance(backend, TransformersBackend)
+
+    def test_gpu_maps_to_transformers(self) -> None:
+        backend = create_ocr_backend("gpu")
+        assert isinstance(backend, TransformersBackend)
 
     def test_invalid_device_raises(self) -> None:
         with pytest.raises(ValueError, match="Invalid device"):

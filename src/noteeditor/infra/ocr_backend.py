@@ -10,9 +10,9 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import httpx
 import numpy as np
@@ -276,14 +276,14 @@ class TransformersBackend:
     """In-process HuggingFace Transformers inference for GLM-OCR."""
 
     model_id: str = "zai-org/GLM-OCR"
-    _processor: object | None = None
-    _model: object | None = None
+    _processor: Any = field(default=None, repr=False)
+    _model: Any = field(default=None, repr=False)
 
     def is_available(self) -> bool:
         """Check if torch and transformers are importable."""
         try:
-            import torch  # noqa: F401
-            import transformers  # noqa: F401
+            import torch  # noqa: F401 # type: ignore[import-not-found]
+            import transformers  # noqa: F401 # type: ignore[import-not-found]
             return True
         except ImportError:
             return False
@@ -302,7 +302,7 @@ class TransformersBackend:
             ) from exc
 
         logger.info("Loading GLM-OCR model: %s", self.model_id)
-        self._processor = AutoProcessor.from_pretrained(self.model_id)
+        self._processor = AutoProcessor.from_pretrained(self.model_id)  # type: ignore[no-untyped-call]
         self._model = AutoModelForImageTextToText.from_pretrained(
             self.model_id, torch_dtype="auto", device_map="auto",
         )
@@ -328,7 +328,7 @@ class TransformersBackend:
             },
         ]
 
-        inputs = processor.apply_chat_template(  # type: ignore[union-attr]
+        inputs = processor.apply_chat_template(
             messages,
             tokenize=True,
             add_generation_prompt=True,
@@ -338,14 +338,14 @@ class TransformersBackend:
         inputs.pop("token_type_ids", None)
 
         # Move inputs to model device
-        device = model.device  # type: ignore[union-attr]
+        device = model.device
         inputs = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
 
-        generated_ids = model.generate(**inputs, max_new_tokens=8192)  # type: ignore[union-attr]
+        generated_ids = model.generate(**inputs, max_new_tokens=8192)
 
         # Decode only newly generated tokens
         input_len = inputs["input_ids"].shape[1]
-        text = processor.decode(  # type: ignore[union-attr]
+        text = processor.decode(
             generated_ids[0][input_len:], skip_special_tokens=True,
         ).strip()
 
@@ -411,6 +411,10 @@ def create_ocr_backend(
             )
         return ZhipuAPIBackend(api_key=api_key)
 
+    # cpu/gpu are layout-level concepts; for OCR they map to Transformers
+    if device in ("cpu", "gpu"):
+        return TransformersBackend(model_id=model_id or "zai-org/GLM-OCR")
+
     if device == "auto":
         # Priority: vLLM → Ollama → Transformers(GPU) → Transformers(CPU)
         vllm = VLLMBackend(base_url=vllm_url or "http://localhost:8000")
@@ -438,5 +442,5 @@ def create_ocr_backend(
 
     raise ValueError(
         f"Invalid device '{device}'. "
-        "Must be one of: auto, transformers, ollama, vllm, api"
+        "Must be one of: auto, transformers, ollama, vllm, api, cpu, gpu"
     )
