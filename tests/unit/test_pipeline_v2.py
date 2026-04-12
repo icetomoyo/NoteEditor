@@ -521,7 +521,7 @@ class TestRunPipelineEditable:
         ):
             run_pipeline(config)
 
-        mock_style.assert_called_once_with(page, layout)
+        mock_style.assert_called_once_with(page, layout, ())
 
     def test_editable_passes_style_results_to_assemble(self, tmp_path: Path) -> None:
         """Style results are passed to assemble_slide."""

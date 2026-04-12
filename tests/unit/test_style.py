@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from noteeditor.models.content import OCRResult
 from noteeditor.models.layout import BoundingBox, LayoutRegion, LayoutResult, RegionLabel
 from noteeditor.models.page import PageImage
 from noteeditor.stages.style import _estimate_font_size, _sample_font_color, estimate_styles
@@ -100,6 +101,21 @@ class TestEstimateFontSize:
     def test_large_title(self) -> None:
         result = _estimate_font_size(120.0, 300)
         assert result == 23  # 120 * 72/300 * 0.8 = 23.04 → 23
+
+    def test_multiline_divides_by_line_count(self) -> None:
+        """5-line bbox: font size ≈ single-line / 5."""
+        single = _estimate_font_size(300.0, 300)  # entire height as 1 line
+        multi = _estimate_font_size(300.0, 300, line_count=5)  # 5 lines
+        assert multi == _estimate_font_size(60.0, 300)  # 300/5 = 60
+        assert single > multi
+
+    def test_line_count_one_same_as_default(self) -> None:
+        """line_count=1 produces same result as omitting it."""
+        assert _estimate_font_size(60.0, 300) == _estimate_font_size(60.0, 300, line_count=1)
+
+    def test_line_count_zero_treated_as_one(self) -> None:
+        """line_count=0 is clamped to 1."""
+        assert _estimate_font_size(60.0, 300, line_count=0) == _estimate_font_size(60.0, 300)
 
 
 # --- _sample_font_color ---
@@ -230,6 +246,49 @@ class TestEstimateStyles:
         layout = _make_layout((
             _make_region("r0", RegionLabel.EQUATION),
         ))
+
+        result = estimate_styles(page, layout)
+
+        assert len(result) == 1
+
+    def test_multiline_ocr_reduces_font_size(self) -> None:
+        """When OCR text has 5 lines, font size is ~1/5 of single-line."""
+        page = _make_page_image()
+        region = _make_region("r0", RegionLabel.BODY_TEXT, height=300)
+        layout = _make_layout((region,))
+        ocr = OCRResult(
+            region_id="r0",
+            text="Line1\nLine2\nLine3\nLine4\nLine5",
+            confidence=0.9,
+            is_formula=False,
+        )
+
+        result_with_ocr = estimate_styles(page, layout, ocr_results=(ocr,))
+        result_no_ocr = estimate_styles(page, layout)
+
+        # With 5-line OCR text, font size should be ~1/5 of no-OCR estimate
+        assert result_with_ocr[0].font_size_pt < result_no_ocr[0].font_size_pt
+        expected = _estimate_font_size(300.0, 300, line_count=5)
+        assert result_with_ocr[0].font_size_pt == expected
+
+    def test_single_line_ocr_same_as_no_ocr(self) -> None:
+        """Single-line OCR text produces same font size as no OCR."""
+        page = _make_page_image()
+        region = _make_region("r0", RegionLabel.TITLE, height=60)
+        layout = _make_layout((region,))
+        ocr = OCRResult(
+            region_id="r0", text="Single Title", confidence=0.9, is_formula=False,
+        )
+
+        with_ocr = estimate_styles(page, layout, ocr_results=(ocr,))
+        without_ocr = estimate_styles(page, layout)
+
+        assert with_ocr[0].font_size_pt == without_ocr[0].font_size_pt
+
+    def test_ocr_results_optional(self) -> None:
+        """estimate_styles works without ocr_results (backward compat)."""
+        page = _make_page_image()
+        layout = _make_layout((_make_region("r0", RegionLabel.TITLE),))
 
         result = estimate_styles(page, layout)
 

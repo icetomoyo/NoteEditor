@@ -70,7 +70,7 @@ def _run_editable_pipeline(
             ocr_results = extract_text(page, layout, ocr_backend)
             image_results = extract_images(page, layout)
             font_matches = match_fonts(layout, config.fonts_dir)
-            style_results = estimate_styles(page, layout)
+            style_results = estimate_styles(page, layout, ocr_results)
             background = extract_background(page, layout)
             slide = assemble_slide(
                 page, layout, ocr_results, background, image_results,
