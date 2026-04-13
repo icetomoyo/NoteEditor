@@ -31,6 +31,7 @@ class PipelineResult:
     total_pages: int
     success_pages: int
     failed_pages: int
+    failed_details: tuple[tuple[int, str], ...] = ()  # (page_number, reason)
 
 
 def _make_fallback_slide(
@@ -51,20 +52,21 @@ def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
     progress: ProgressTracker,
-) -> tuple[list[SlideContent], int]:
+) -> tuple[list[SlideContent], list[tuple[int, str]]]:
     """Run the editable pipeline stages.
 
-    Returns (slides, failed_count).
+    Returns (slides, failed_details) where failed_details is a list of
+    (page_number, reason) tuples.
     """
     if not pages:
-        return [], 0
+        return [], []
 
     model_mgr = ModelManager(models_dir=config.models_dir, device=config.device)
     layout_session = model_mgr.get_layout_model()
     ocr_backend = model_mgr.create_ocr_backend()
 
     slides: list[SlideContent] = []
-    failed = 0
+    failures: list[tuple[int, str]] = []
 
     for page in pages:
         progress.begin_page(page.page_number)
@@ -93,20 +95,20 @@ def _run_editable_pipeline(
                 page, layout, ocr_results, background, image_results,
                 font_matches, style_results,
             )
-        except Exception:
+        except Exception as exc:
             logger.warning(
                 "Page %d failed, falling back to screenshot",
                 page.page_number,
                 exc_info=True,
             )
             slide = _make_fallback_slide(page)
-            failed += 1
+            failures.append((page.page_number, str(exc)))
             success = False
 
         slides.append(slide)
         progress.end_page(page.page_number, success=success)
 
-    return slides, failed
+    return slides, failures
 
 
 def run_pipeline(config: PipelineConfig) -> PipelineResult:
@@ -143,7 +145,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     progress = ProgressTracker(total_pages=total, verbose=config.verbose)
     progress.start()
 
-    slides, failed = _run_editable_pipeline(pages, config, progress)
+    slides, failures = _run_editable_pipeline(pages, config, progress)
 
     progress.begin_stage("build")
     build_editable_pptx(tuple(slides), config.output_path, config.dpi)
@@ -153,6 +155,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     return PipelineResult(
         output_path=config.output_path,
         total_pages=total,
-        success_pages=total - failed,
-        failed_pages=failed,
+        success_pages=total - len(failures),
+        failed_pages=len(failures),
+        failed_details=tuple(failures),
     )

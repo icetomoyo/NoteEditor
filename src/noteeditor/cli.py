@@ -101,6 +101,13 @@ def main(
             f"Done: {result.success_pages}/{result.total_pages} pages → {result.output_path}"
         )
 
+        if result.failed_details:
+            click.echo("")
+            click.echo(f"Warning: {result.failed_pages} page(s) failed:", err=True)
+            for page_num, reason in result.failed_details:
+                click.echo(f"  Page {page_num}: {reason}", err=True)
+            click.echo("Failed pages use original screenshot as fallback.", err=True)
+
     except InputError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

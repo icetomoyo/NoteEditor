@@ -211,6 +211,7 @@ class TestRunPipelineEditable:
         assert result.total_pages == 1
         assert result.success_pages == 1
         assert result.failed_pages == 0
+        assert result.failed_details == ()
         assert result.output_path == output_path
         mock_bg.assert_called_once()
 
@@ -634,6 +635,9 @@ class TestRunPipelineEditable:
             result = run_pipeline(config)
 
         assert result.failed_pages == 1
+        assert len(result.failed_details) == 1
+        assert result.failed_details[0][0] == 0  # page number
+        assert "ocr error" in result.failed_details[0][1]  # reason
         slides_arg = mock_build.call_args[0][0]
         assert slides_arg[0].status == "fallback"
 
