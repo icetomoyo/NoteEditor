@@ -69,16 +69,30 @@ def validate_dpi(dpi: int) -> int:
     default="auto",
     help="OCR backend: auto, transformers, ollama, vllm, api, cpu, gpu (default: auto).",
 )
+@click.option(
+    "--retry-pages", default=None,
+    help="Only process these page numbers (comma-separated, 0-based). E.g. --retry-pages 3,7",
+)
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Enable verbose output.")
 def main(
     input_pdf: str, output: str | None, dpi: int,
-    mode: str, device: str, verbose: bool,
+    mode: str, device: str, retry_pages: str | None, verbose: bool,
 ) -> None:
     """Convert a NotebookLM PDF to PPTX."""
     try:
         pdf_path = validate_pdf(Path(input_pdf))
         validated_dpi = validate_dpi(dpi)
         out_path = resolve_output_path(pdf_path, output)
+
+        parsed_retry: frozenset[int] | None = None
+        if retry_pages is not None:
+            try:
+                parsed_retry = frozenset(int(p.strip()) for p in retry_pages.split(","))
+            except ValueError:
+                raise InputError(
+                    f"Invalid --retry-pages value: {retry_pages!r}. "
+                    "Expected comma-separated page numbers (e.g. 3,7,12)."
+                )
 
         config = build_config(
             input_path=pdf_path,
@@ -87,6 +101,7 @@ def main(
             verbose=verbose,
             mode=mode,  # type: ignore[arg-type]
             device=device,
+            retry_pages=parsed_retry,
         )
 
         click.echo(f"Input:  {pdf_path}")

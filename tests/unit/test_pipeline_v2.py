@@ -24,6 +24,7 @@ def _make_config(
     dpi: int = 300,
     verbose: bool = False,
     mode: str = "editable",
+    retry_pages: frozenset[int] | None = None,
 ) -> PipelineConfig:
     """Create a test PipelineConfig."""
     return PipelineConfig(
@@ -32,6 +33,7 @@ def _make_config(
         dpi=dpi,
         verbose=verbose,
         mode=mode,
+        retry_pages=retry_pages,
     )
 
 
@@ -993,3 +995,92 @@ class TestAllPagesFallback:
         assert result.total_pages == 0
         assert result.success_pages == 0
         assert result.failed_pages == 0
+
+
+# ---------------------------------------------------------------------------
+# Retry pages
+# ---------------------------------------------------------------------------
+
+
+class TestRetryPages:
+    """Tests for --retry-pages support."""
+
+    def test_retry_pages_only_processes_specified(self, tmp_path: Path) -> None:
+        """Only pages in retry_pages go through full pipeline."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(
+            str(pdf_path), str(output_path),
+            mode="editable", retry_pages=frozenset({1}),
+        )
+
+        page0 = _make_page_image(0)
+        page1 = _make_page_image(1)
+        page2 = _make_page_image(2)
+        layout = _make_layout_result(1)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page0, page1, page2)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout) as mock_layout,
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
+            patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
+            patch("noteeditor.pipeline.assemble_slide") as mock_assemble,
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ) as mock_build,
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            mock_assemble.return_value = _make_mock_slide(page1)
+            result = run_pipeline(config)
+
+        # Layout detection called only for page 1
+        mock_layout.assert_called_once()
+        # All 3 slides produced
+        slides_arg = mock_build.call_args[0][0]
+        assert len(slides_arg) == 3
+        # Pages 0 and 2 are fallback (screenshot)
+        assert slides_arg[0].status == "fallback"
+        assert slides_arg[2].status == "fallback"
+
+    def test_no_retry_pages_processes_all(self, tmp_path: Path) -> None:
+        """Without retry_pages, all pages are processed."""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 mock")
+        output_path = tmp_path / "output.pptx"
+        config = _make_config(str(pdf_path), str(output_path), mode="editable")
+
+        page = _make_page_image(0)
+        layout = _make_layout_result(0)
+        MockMgr, _ = _setup_model_manager()
+
+        with (
+            patch("noteeditor.pipeline.parse_pdf", return_value=(page,)),
+            patch("noteeditor.pipeline.detect_layout", return_value=layout) as mock_layout,
+            patch("noteeditor.pipeline.extract_text", return_value=()),
+            patch("noteeditor.pipeline.extract_images", return_value=()),
+            patch("noteeditor.pipeline.match_fonts", return_value=()),
+            patch("noteeditor.pipeline.estimate_styles", return_value=()),
+            patch(
+                "noteeditor.pipeline.extract_background",
+                return_value=_make_background_image(),
+            ),
+            patch("noteeditor.pipeline.assemble_slide") as mock_assemble,
+            patch(
+                "noteeditor.pipeline.build_editable_pptx",
+                return_value=output_path,
+            ),
+            patch("noteeditor.pipeline.ModelManager", MockMgr),
+        ):
+            mock_assemble.return_value = _make_mock_slide(page)
+            run_pipeline(config)
+
+        mock_layout.assert_called_once()

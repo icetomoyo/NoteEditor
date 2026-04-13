@@ -68,8 +68,17 @@ def _run_editable_pipeline(
     slides: list[SlideContent] = []
     failures: list[tuple[int, str]] = []
 
+    retry_set = config.retry_pages
+
     for page in pages:
         progress.begin_page(page.page_number)
+
+        # Skip pages not in retry set (if retry_pages is specified)
+        if retry_set is not None and page.page_number not in retry_set:
+            slides.append(_make_fallback_slide(page))
+            progress.end_page(page.page_number, success=True)
+            continue
+
         success = True
         try:
             progress.begin_stage("layout")
@@ -140,6 +149,15 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
             success_pages=total,
             failed_pages=0,
         )
+
+    # Warn about out-of-range retry pages
+    if config.retry_pages is not None:
+        valid_page_nums = {p.page_number for p in pages}
+        invalid = config.retry_pages - valid_page_nums
+        if invalid:
+            logger.warning(
+                "Retry pages out of range (ignored): %s", sorted(invalid),
+            )
 
     # Editable mode: multi-stage pipeline with progress tracking
     progress = ProgressTracker(total_pages=total, verbose=config.verbose)
