@@ -8,6 +8,7 @@ from pathlib import Path
 
 from noteeditor.infra.config import PipelineConfig
 from noteeditor.infra.model_manager import ModelManager
+from noteeditor.infra.progress import ProgressTracker
 from noteeditor.models.page import PageImage
 from noteeditor.models.slide import SlideContent
 from noteeditor.stages.background import extract_background
@@ -49,6 +50,7 @@ def _make_fallback_slide(
 def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
+    progress: ProgressTracker,
 ) -> tuple[list[SlideContent], int]:
     """Run the editable pipeline stages.
 
@@ -65,13 +67,28 @@ def _run_editable_pipeline(
     failed = 0
 
     for page in pages:
+        progress.begin_page(page.page_number)
+        success = True
         try:
+            progress.begin_stage("layout")
             layout = detect_layout(page, layout_session)
+
+            progress.begin_stage("ocr")
             ocr_results = extract_text(page, layout, ocr_backend)
+
+            progress.begin_stage("image")
             image_results = extract_images(page, layout)
+
+            progress.begin_stage("font")
             font_matches = match_fonts(layout, config.fonts_dir)
+
+            progress.begin_stage("style")
             style_results = estimate_styles(page, layout, ocr_results)
+
+            progress.begin_stage("background")
             background = extract_background(page, layout)
+
+            progress.begin_stage("assemble")
             slide = assemble_slide(
                 page, layout, ocr_results, background, image_results,
                 font_matches, style_results,
@@ -84,8 +101,10 @@ def _run_editable_pipeline(
             )
             slide = _make_fallback_slide(page)
             failed += 1
+            success = False
 
         slides.append(slide)
+        progress.end_page(page.page_number, success=success)
 
     return slides, failed
 
@@ -120,10 +139,16 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
             failed_pages=0,
         )
 
-    # Editable mode: multi-stage pipeline
-    slides, failed = _run_editable_pipeline(pages, config)
+    # Editable mode: multi-stage pipeline with progress tracking
+    progress = ProgressTracker(total_pages=total, verbose=config.verbose)
+    progress.start()
 
+    slides, failed = _run_editable_pipeline(pages, config, progress)
+
+    progress.begin_stage("build")
     build_editable_pptx(tuple(slides), config.output_path, config.dpi)
+
+    progress.finish()
 
     return PipelineResult(
         output_path=config.output_path,
