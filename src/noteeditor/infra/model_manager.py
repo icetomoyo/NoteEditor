@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-import onnxruntime as ort  # type: ignore[import-untyped]
+import onnxruntime as ort
 
 from noteeditor.infra.ocr_backend import OCRBackend, create_ocr_backend
 

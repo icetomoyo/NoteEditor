@@ -9,6 +9,7 @@ from pathlib import Path
 from noteeditor.infra.checkpoint import CheckpointData, CheckpointManager, _mark_completed
 from noteeditor.infra.config import PipelineConfig
 from noteeditor.infra.model_manager import ModelManager
+from noteeditor.infra.ocr_backend import OCRBackend
 from noteeditor.infra.progress import ProgressTracker
 from noteeditor.models.page import PageImage
 from noteeditor.models.slide import SlideContent
@@ -53,6 +54,8 @@ def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
     progress: ProgressTracker,
+    model_mgr: ModelManager,
+    ocr_backend: OCRBackend,
     checkpoint_mgr: CheckpointManager | None = None,
     checkpoint_data: CheckpointData | None = None,
 ) -> tuple[list[SlideContent], list[tuple[int, str]]]:
@@ -64,28 +67,17 @@ def _run_editable_pipeline(
     if not pages:
         return [], []
 
-    model_mgr = ModelManager(models_dir=config.models_dir, device=config.device)
     layout_session = model_mgr.get_layout_model()
-    ocr_backend = model_mgr.create_ocr_backend()
     lama_session = model_mgr.get_lama_model()
 
     slides: list[SlideContent] = []
     failures: list[tuple[int, str]] = []
 
     retry_set = config.retry_pages
-    done_pages = checkpoint_data.get_done_pages() if checkpoint_data is not None else frozenset()
     ckpt = checkpoint_data
 
     for page in pages:
         progress.begin_page(page.page_number)
-
-        # Skip pages already completed in checkpoint (unless retry overrides)
-        if page.page_number in done_pages and (
-            retry_set is None or page.page_number not in retry_set
-        ):
-            slides.append(_make_fallback_slide(page))
-            progress.end_page(page.page_number, success=True)
-            continue
 
         # Skip pages not in retry set (if retry_pages is specified)
         if retry_set is not None and page.page_number not in retry_set:
@@ -171,6 +163,32 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
             failed_pages=0,
         )
 
+    if total == 0:
+        # Empty PDF — skip validation, produce empty PPTX
+        build_editable_pptx((), config.output_path, config.dpi)
+        return PipelineResult(
+            output_path=config.output_path,
+            total_pages=0,
+            success_pages=0,
+            failed_pages=0,
+        )
+
+    # Validate models and backends before entering page loop (fail fast)
+    model_mgr = ModelManager(models_dir=config.models_dir, device=config.device)
+    try:
+        model_mgr.get_layout_model()
+    except FileNotFoundError as exc:
+        from noteeditor.errors import InputError
+        raise InputError(str(exc)) from exc
+
+    ocr_backend = model_mgr.create_ocr_backend()
+    if not ocr_backend.is_available():
+        from noteeditor.errors import InputError
+        raise InputError(
+            f"OCR backend ({type(ocr_backend).__name__}) is not available. "
+            "Check that the required service or library is installed."
+        )
+
     # Warn about out-of-range retry pages
     if config.retry_pages is not None:
         valid_page_nums = {p.page_number for p in pages}
@@ -202,7 +220,8 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     progress.start()
 
     slides, failures = _run_editable_pipeline(
-        pages, config, progress, checkpoint_mgr, checkpoint_data,
+        pages, config, progress, model_mgr, ocr_backend,
+        checkpoint_mgr, checkpoint_data,
     )
 
     progress.begin_stage("build")

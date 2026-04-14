@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-import onnxruntime as ort  # type: ignore[import-untyped]
+import onnxruntime as ort
 
 from noteeditor.models.layout import BoundingBox, LayoutRegion, LayoutResult, RegionLabel
 from noteeditor.models.page import PageImage
