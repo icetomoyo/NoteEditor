@@ -352,8 +352,8 @@ class TestExtractBackground:
         extract_background(page, layout)
         np.testing.assert_array_equal(page.image, original)
 
-    def test_complex_background_fallback(self) -> None:
-        """Complex background falls back to white fill."""
+    def test_complex_background_fallback_no_lama(self) -> None:
+        """Complex background falls back to white fill when no LaMA."""
         rng = np.random.default_rng(42)
         image = rng.integers(0, 256, (400, 600, 3), dtype=np.uint8)
         image[50:90, 50:250] = 0
@@ -362,8 +362,28 @@ class TestExtractBackground:
         region = _make_region(x=50, y=50, width=200, height=40)
         layout = _make_layout_result(regions=(region,))
 
-        result = extract_background(page, layout)
+        result = extract_background(page, layout, lama_session=None)
         # Should fill with white (fallback)
+        assert result[70, 150, 0] == 255
+
+    def test_complex_background_lama_failure_fallback(self) -> None:
+        """LaMA inference failure falls back to white fill."""
+        from unittest.mock import MagicMock
+
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 256, (400, 600, 3), dtype=np.uint8)
+        image[50:90, 50:250] = 0
+
+        mock_session = MagicMock()
+        mock_session.run.side_effect = RuntimeError("ONNX error")
+        mock_session.get_inputs.return_value = [MagicMock(name="image"), MagicMock(name="mask")]
+
+        page = _make_page_image(image)
+        region = _make_region(x=50, y=50, width=200, height=40)
+        layout = _make_layout_result(regions=(region,))
+
+        result = extract_background(page, layout, lama_session=mock_session)
+        # Should fall back to white fill
         assert result[70, 150, 0] == 255
 
     def test_multiple_text_and_image_regions(self) -> None:

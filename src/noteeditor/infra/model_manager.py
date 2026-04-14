@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,10 +11,18 @@ import onnxruntime as ort  # type: ignore[import-untyped]
 
 from noteeditor.infra.ocr_backend import OCRBackend, create_ocr_backend
 
+logger = logging.getLogger(__name__)
+
 _LAYOUT_MODEL_FILENAME = "pp_doclayout_v3.onnx"
 _LAYOUT_MODEL_URL = (
     "https://huggingface.co/alex-dinh/PP-DocLayoutV3-ONNX/"
     "resolve/main/pp_doclayout_v3.onnx"
+)
+
+_LAMA_MODEL_FILENAME = "lama.onnx"
+_LAMA_MODEL_URL = (
+    "https://huggingface.co/smartywu/big-lama-onnx/"
+    "resolve/main/lama.onnx"
 )
 
 
@@ -46,6 +55,30 @@ class ModelManager:
             return ort.InferenceSession(str(model_path), providers=providers)
         except Exception as exc:
             raise RuntimeError(f"Failed to load layout model from {model_path}: {exc}") from exc
+
+    def get_lama_model(self) -> ort.InferenceSession | None:
+        """Load the LaMA inpainting model if available.
+
+        Returns None (without error) if the model file doesn't exist.
+        This allows graceful fallback to white fill.
+
+        Returns:
+            InferenceSession or None if model is not installed.
+        """
+        model_path = self.models_dir / _LAMA_MODEL_FILENAME
+        if not model_path.exists():
+            logger.debug(
+                "LaMA model not found at %s — complex backgrounds will use white fill",
+                model_path,
+            )
+            return None
+
+        providers = self._resolve_providers()
+        try:
+            return ort.InferenceSession(str(model_path), providers=providers)
+        except Exception as exc:
+            logger.warning("Failed to load LaMA model: %s", exc)
+            return None
 
     def create_ocr_backend(self) -> OCRBackend:
         """Create an OCR backend based on the device setting.

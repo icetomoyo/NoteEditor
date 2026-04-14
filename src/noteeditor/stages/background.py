@@ -8,8 +8,9 @@ gradient, or complex, with appropriate fill strategies for each.
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
+import cv2
 import numpy as np
 
 from noteeditor.models.layout import LayoutRegion, LayoutResult, RegionLabel
@@ -150,6 +151,56 @@ def _fill_gradient(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return result
 
 
+def _fill_complex(
+    image: np.ndarray,
+    mask: np.ndarray,
+    lama_session: Any,
+) -> np.ndarray:
+    """Fill masked regions using LaMA inpainting model.
+
+    LaMA expects input image (1, 3, H, W) float32 [0,1] and
+    mask (1, 1, H, W) float32 [0,1]. Both are resized to 512x512
+    for inference, then the result is resized back to original size.
+
+    Args:
+        image: Page image (H, W, 3), dtype uint8.
+        mask: Text mask (H, W), 255=fill, 0=keep.
+        lama_session: ONNX InferenceSession for LaMA model.
+
+    Returns:
+        New image with masked regions inpainted.
+    """
+    orig_h, orig_w = image.shape[:2]
+
+    # Resize to 512x512 for LaMA
+    img_resized = cv2.resize(image, (512, 512)).astype(np.float32) / 255.0
+    mask_resized = cv2.resize(mask, (512, 512)).astype(np.float32) / 255.0
+
+    # Reshape to NCHW
+    img_input = np.transpose(img_resized, (2, 0, 1))[np.newaxis, ...]  # (1, 3, 512, 512)
+    mask_input = mask_resized[np.newaxis, np.newaxis, ...]  # (1, 1, 512, 512)
+
+    input_name_img = lama_session.get_inputs()[0].name
+    input_name_mask = lama_session.get_inputs()[1].name
+
+    outputs = lama_session.run(
+        None, {input_name_img: img_input, input_name_mask: mask_input},
+    )
+
+    # Output: (1, 3, 512, 512) float32 [0, 1]
+    output = outputs[0][0]  # (3, 512, 512)
+    output = np.transpose(output, (1, 2, 0))  # (512, 512, 3)
+    output = np.clip(output * 255, 0, 255).astype(np.uint8)
+
+    # Resize back to original dimensions
+    result = cv2.resize(output, (orig_w, orig_h))
+
+    # Only replace masked regions — keep original non-masked pixels
+    final = image.copy()
+    final[mask == 255] = result[mask == 255]
+    return final
+
+
 def _fill_fallback(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """Fill masked regions with white (fallback for complex backgrounds).
 
@@ -168,6 +219,7 @@ def _fill_fallback(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
 def extract_background(
     page_image: PageImage,
     layout_result: LayoutResult,
+    lama_session: Any = None,
 ) -> np.ndarray:
     """Extract a clean background image with text regions removed.
 
@@ -175,11 +227,12 @@ def extract_background(
     fill strategy:
     - Simple (solid/near-solid): median color fill
     - Gradient: per-row linear interpolation
-    - Complex: white fill (LaMA inpainting deferred to v0.6.0)
+    - Complex: LaMA inpainting if model available, else white fill
 
     Args:
         page_image: Source page image with rendered content.
         layout_result: Layout detection results with region positions.
+        lama_session: Optional ONNX InferenceSession for LaMA model.
 
     Returns:
         Clean background image (H, W, 3), dtype uint8.
@@ -202,4 +255,12 @@ def extract_background(
         return _fill_simple(image, mask)
     if complexity == "gradient":
         return _fill_gradient(image, mask)
+
+    # Complex background: try LaMA, fall back to white
+    if lama_session is not None:
+        try:
+            return _fill_complex(image, mask, lama_session)
+        except Exception as exc:
+            logger.warning("LaMA inpainting failed, falling back to white fill: %s", exc)
+
     return _fill_fallback(image, mask)

@@ -64,6 +64,7 @@ def _run_editable_pipeline(
     model_mgr = ModelManager(models_dir=config.models_dir, device=config.device)
     layout_session = model_mgr.get_layout_model()
     ocr_backend = model_mgr.create_ocr_backend()
+    lama_session = model_mgr.get_lama_model()
 
     slides: list[SlideContent] = []
     failures: list[tuple[int, str]] = []
@@ -97,7 +98,7 @@ def _run_editable_pipeline(
             style_results = estimate_styles(page, layout, ocr_results)
 
             progress.begin_stage("background")
-            background = extract_background(page, layout)
+            background = extract_background(page, layout, lama_session)
 
             progress.begin_stage("assemble")
             slide = assemble_slide(

@@ -88,11 +88,11 @@ def main(
         if retry_pages is not None:
             try:
                 parsed_retry = frozenset(int(p.strip()) for p in retry_pages.split(","))
-            except ValueError:
+            except ValueError as exc:
                 raise InputError(
                     f"Invalid --retry-pages value: {retry_pages!r}. "
                     "Expected comma-separated page numbers (e.g. 3,7,12)."
-                )
+                ) from exc
 
         config = build_config(
             input_path=pdf_path,

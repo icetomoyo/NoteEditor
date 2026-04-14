@@ -317,7 +317,9 @@ class TestRunPipelineEditable:
         ):
             run_pipeline(config)
 
-        mock_bg.assert_called_once_with(page, layout)
+        mock_bg.assert_called_once()
+        assert mock_bg.call_args[0][0] is page
+        assert mock_bg.call_args[0][1] is layout
 
     def test_editable_passes_background_to_assemble(self, tmp_path: Path) -> None:
         """Background image is passed to assemble_slide."""
