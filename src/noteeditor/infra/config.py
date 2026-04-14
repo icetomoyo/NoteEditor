@@ -83,6 +83,7 @@ def build_config(
     mode: Literal["visual", "editable"] = "editable",
     device: str | None = None,
     retry_pages: frozenset[int] | None = None,
+    force: bool = False,
     models_dir: Path | None = None,
     fonts_dir: Path | None = None,
 ) -> PipelineConfig:
@@ -101,6 +102,7 @@ def build_config(
         mode=mode,
         device=resolved_device,
         retry_pages=retry_pages,
+        force=force,
         models_dir=models_dir if models_dir is not None else _DEFAULT_MODELS_DIR,
         fonts_dir=fonts_dir if fonts_dir is not None else _DEFAULT_FONTS_DIR,
     )
@@ -120,5 +122,6 @@ class PipelineConfig:
     mode: Literal["visual", "editable"] = "editable"
     device: str = "auto"
     retry_pages: frozenset[int] | None = None
+    force: bool = False
     models_dir: Path = _DEFAULT_MODELS_DIR
     fonts_dir: Path = _DEFAULT_FONTS_DIR

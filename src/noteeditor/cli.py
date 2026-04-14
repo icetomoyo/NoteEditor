@@ -73,10 +73,12 @@ def validate_dpi(dpi: int) -> int:
     "--retry-pages", default=None,
     help="Only process these page numbers (comma-separated, 0-based). E.g. --retry-pages 3,7",
 )
+@click.option("--force", is_flag=True, default=False, help="Ignore existing checkpoint.")
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Enable verbose output.")
 def main(
     input_pdf: str, output: str | None, dpi: int,
-    mode: str, device: str, retry_pages: str | None, verbose: bool,
+    mode: str, device: str, retry_pages: str | None,
+    force: bool, verbose: bool,
 ) -> None:
     """Convert a NotebookLM PDF to PPTX."""
     try:
@@ -102,6 +104,7 @@ def main(
             mode=mode,  # type: ignore[arg-type]
             device=device,
             retry_pages=parsed_retry,
+            force=force,
         )
 
         click.echo(f"Input:  {pdf_path}")

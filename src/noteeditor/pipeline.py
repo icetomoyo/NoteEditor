@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from noteeditor.infra.checkpoint import CheckpointData, CheckpointManager, _mark_completed
 from noteeditor.infra.config import PipelineConfig
 from noteeditor.infra.model_manager import ModelManager
 from noteeditor.infra.progress import ProgressTracker
@@ -52,6 +53,8 @@ def _run_editable_pipeline(
     pages: tuple[PageImage, ...],
     config: PipelineConfig,
     progress: ProgressTracker,
+    checkpoint_mgr: CheckpointManager | None = None,
+    checkpoint_data: CheckpointData | None = None,
 ) -> tuple[list[SlideContent], list[tuple[int, str]]]:
     """Run the editable pipeline stages.
 
@@ -70,9 +73,19 @@ def _run_editable_pipeline(
     failures: list[tuple[int, str]] = []
 
     retry_set = config.retry_pages
+    done_pages = checkpoint_data.get_done_pages() if checkpoint_data is not None else frozenset()
+    ckpt = checkpoint_data
 
     for page in pages:
         progress.begin_page(page.page_number)
+
+        # Skip pages already completed in checkpoint (unless retry overrides)
+        if page.page_number in done_pages and (
+            retry_set is None or page.page_number not in retry_set
+        ):
+            slides.append(_make_fallback_slide(page))
+            progress.end_page(page.page_number, success=True)
+            continue
 
         # Skip pages not in retry set (if retry_pages is specified)
         if retry_set is not None and page.page_number not in retry_set:
@@ -118,6 +131,13 @@ def _run_editable_pipeline(
         slides.append(slide)
         progress.end_page(page.page_number, success=success)
 
+        # Update checkpoint after each page
+        if checkpoint_mgr is not None and ckpt is not None:
+            status = "success" if success else "failed"
+            reason = failures[-1][1] if not success and failures else ""
+            ckpt = _mark_completed(ckpt, page.page_number, status, reason)
+            checkpoint_mgr.save(ckpt)
+
     return slides, failures
 
 
@@ -160,16 +180,38 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
                 "Retry pages out of range (ignored): %s", sorted(invalid),
             )
 
+    # Checkpoint setup
+    checkpoint_path = config.input_path.parent / ".noteeditor_checkpoint.json"
+    checkpoint_mgr = CheckpointManager(checkpoint_path)
+    checkpoint_data: CheckpointData | None = None
+
+    if not config.force:
+        checkpoint_data = checkpoint_mgr.load(str(config.input_path))
+        if checkpoint_data is not None:
+            done = checkpoint_data.get_done_pages()
+            logger.info("Resuming from checkpoint: %d pages already done", len(done))
+
+    if checkpoint_data is None:
+        checkpoint_data = CheckpointData(
+            input_pdf=str(config.input_path),
+            total_pages=total,
+        )
+
     # Editable mode: multi-stage pipeline with progress tracking
     progress = ProgressTracker(total_pages=total, verbose=config.verbose)
     progress.start()
 
-    slides, failures = _run_editable_pipeline(pages, config, progress)
+    slides, failures = _run_editable_pipeline(
+        pages, config, progress, checkpoint_mgr, checkpoint_data,
+    )
 
     progress.begin_stage("build")
     build_editable_pptx(tuple(slides), config.output_path, config.dpi)
 
     progress.finish()
+
+    # Clear checkpoint on successful completion
+    checkpoint_mgr.clear()
 
     return PipelineResult(
         output_path=config.output_path,
